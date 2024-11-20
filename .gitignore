@@ -1,0 +1,18 @@
+# Binaires compilés et fichiers temporaires
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Dépendances
+/vendor/
+
+# Fichiers de configuration d'IDE
+.idea/
+.vscode/
+
+# Fichiers de log
+*.log
