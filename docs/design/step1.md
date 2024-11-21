@@ -65,7 +65,7 @@ Exemple de contenu pour client.go :
 
 ```go
 /*
-Copyright (C) 2023 Cloud Temple
+Copyright (C) 2024 Cloud Temple
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

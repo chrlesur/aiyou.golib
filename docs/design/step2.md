@@ -114,3 +114,18 @@ Après avoir terminé ces tâches, fournissez un rapport détaillé incluant :
 - Le contenu des nouveaux fichiers et des modifications majeures
 - Toute difficulté rencontrée ou décision de conception prise
 - Des suggestions pour les prochaines étapes du développement
+
+----
+
+Difficultés rencontrées et décisions de conception :
+
+La structure exacte des requêtes et réponses de l'API AI.YOU n'étant pas spécifiée, des structures de base ont été créées qui devront être affinées ultérieurement.
+L'authentification a été conçue comme une interface pour permettre différentes méthodes d'authentification à l'avenir.
+Suggestions pour les prochaines étapes :
+
+Implémenter les fonctionnalités spécifiques de l'API AI.YOU (endpoints, sérialisation/désérialisation des requêtes et réponses).
+Ajouter des tests unitaires pour chaque composant.
+Implémenter une gestion d'erreurs plus détaillée et spécifique à l'API.
+Ajouter des exemples plus complets dans le répertoire examples/.
+Mettre en place une CI/CD pour les tests automatiques et le déploiement.
+Tous les fichiers ont été formatés avec gofmt, et des commentaires détaillés ont été ajoutés suivant le format godoc. Les en-têtes de licence GPL-3.0 ont été inclus dans chaque fichier.

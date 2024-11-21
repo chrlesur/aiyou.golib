@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2023 Cloud Temple
+Copyright (C) 2024 Cloud Temple
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -14,94 +14,149 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-
-// Fichier: pkg/aiyou/chat.go
+// File: pkg/aiyou/chat.go
 
 package aiyou
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "io"
-    "net/http"
-    "strings"
 	"bufio"
-    "bytes"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 )
 
 // StreamReader helps read and process the streaming response
 type StreamReader struct {
-    reader *bufio.Reader
+	reader *bufio.Reader
+	closer io.Closer
+	logger Logger
+}
+
+// NewStreamReader creates a new StreamReader
+func NewStreamReader(r io.ReadCloser, logger Logger) *StreamReader {
+	return &StreamReader{
+		reader: bufio.NewReader(r),
+		closer: r,
+		logger: logger,
+	}
 }
 
 // ChatCompletion sends a chat completion request and returns the response
 func (c *Client) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
-    endpoint := "/api/v1/chat/completions"
-    jsonData, err := json.Marshal(req)
-    if err != nil {
-        return nil, fmt.Errorf("failed to marshal request: %w", err)
-    }
+	c.logger.Debugf("Starting ChatCompletion request")
+	var resp *ChatCompletionResponse
+	err := retryOperation(ctx, c.logger, c.maxRetries, c.initialDelay, func() error {
+		var err error
+		endpoint := "/api/v1/chat/completions"
+		jsonData, err := json.Marshal(req)
+		if err != nil {
+			c.logger.Errorf("Failed to marshal request: %v", err)
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
 
-    resp, err := c.AuthenticatedRequest(ctx, http.MethodPost, endpoint, strings.NewReader(string(jsonData)))
-    if err != nil {
-        return nil, fmt.Errorf("failed to send chat completion request: %w", err)
-    }
-    defer resp.Body.Close()
+		c.logger.Debugf("Sending ChatCompletion request to %s", endpoint)
+		httpResp, err := c.AuthenticatedRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
+		if err != nil {
+			c.logger.Errorf("ChatCompletion request failed: %v", err)
+			return &NetworkError{Err: err}
+		}
+		defer httpResp.Body.Close()
 
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-    }
+		if httpResp.StatusCode != http.StatusOK {
+			c.logger.Warnf("Unexpected status code: %d", httpResp.StatusCode)
+			return &APIError{StatusCode: httpResp.StatusCode, Message: fmt.Sprintf("unexpected status code: %d", httpResp.StatusCode)}
+		}
 
-    var chatResp ChatCompletionResponse
-    if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-        return nil, fmt.Errorf("failed to decode response: %w", err)
-    }
+		resp = &ChatCompletionResponse{}
+		if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+			c.logger.Errorf("Failed to decode response: %v", err)
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
 
-    return &chatResp, nil
+		c.logger.Infof("ChatCompletion request successful")
+		return nil
+	})
+
+	return resp, err
 }
 
-// NewStreamReader creates a new StreamReader
-func NewStreamReader(r io.Reader) *StreamReader {
-    return &StreamReader{reader: bufio.NewReader(r)}
+// ChatCompletionStream sends a streaming chat completion request
+func (c *Client) ChatCompletionStream(ctx context.Context, req ChatCompletionRequest) (*StreamReader, error) {
+	c.logger.Debugf("Starting ChatCompletionStream request")
+	var streamReader *StreamReader
+	err := retryOperation(ctx, c.logger, c.maxRetries, c.initialDelay, func() error {
+		endpoint := "/api/v1/chat/completions"
+		req.Stream = true
+		jsonData, err := json.Marshal(req)
+		if err != nil {
+			c.logger.Errorf("Failed to marshal request: %v", err)
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		c.logger.Debugf("Sending ChatCompletionStream request to %s", endpoint)
+		resp, err := c.AuthenticatedRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
+		if err != nil {
+			c.logger.Errorf("ChatCompletionStream request failed: %v", err)
+			return &NetworkError{Err: err}
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			c.logger.Warnf("Unexpected status code: %d", resp.StatusCode)
+			return &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("unexpected status code: %d", resp.StatusCode)}
+		}
+
+		streamReader = NewStreamReader(resp.Body, c.logger)
+		c.logger.Infof("ChatCompletionStream request successful, streaming started")
+		return nil
+	})
+
+	return streamReader, err
 }
 
 // ReadChunk reads and processes a single chunk from the stream
 func (sr *StreamReader) ReadChunk() (*ChatCompletionResponse, error) {
-    line, err := sr.reader.ReadBytes('\n')
-    if err != nil {
-        return nil, err
-    }
+	if sr.logger != nil {
+		sr.logger.Debugf("Reading stream chunk")
+	}
+	line, err := sr.reader.ReadBytes('\n')
+	if err != nil {
+		if err == io.EOF {
+			if sr.logger != nil {
+				sr.logger.Infof("End of stream reached")
+			}
+		} else {
+			if sr.logger != nil {
+				sr.logger.Errorf("Error reading stream: %v", err)
+			}
+		}
+		return nil, err
+	}
 
-    // Remove "data: " prefix if present
-    line = bytes.TrimPrefix(line, []byte("data: "))
+	line = bytes.TrimPrefix(line, []byte("data: "))
+	var chunk ChatCompletionResponse
+	if err := json.Unmarshal(line, &chunk); err != nil {
+		if sr.logger != nil {
+			sr.logger.Errorf("Failed to unmarshal chunk: %v", err)
+		}
+		return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
+	}
 
-    var chunk ChatCompletionResponse
-    if err := json.Unmarshal(line, &chunk); err != nil {
-        return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
-    }
-
-    return &chunk, nil
+	if sr.logger != nil {
+		sr.logger.Debugf("Chunk read successfully")
+	}
+	return &chunk, nil
 }
 
-// Modification de la fonction ChatCompletionStream existante
-func (c *Client) ChatCompletionStream(ctx context.Context, req ChatCompletionRequest) (*StreamReader, error) {
-    endpoint := "/api/v1/chat/completions"
-    req.Stream = true
-    jsonData, err := json.Marshal(req)
-    if err != nil {
-        return nil, fmt.Errorf("failed to marshal request: %w", err)
-    }
+// SetLogger sets a custom logger for the StreamReader
+func (sr *StreamReader) SetLogger(logger Logger) {
+	sr.logger = logger
+}
 
-    resp, err := c.AuthenticatedRequest(ctx, http.MethodPost, endpoint, strings.NewReader(string(jsonData)))
-    if err != nil {
-        return nil, fmt.Errorf("failed to send chat completion stream request: %w", err)
-    }
-
-    if resp.StatusCode != http.StatusOK {
-        resp.Body.Close()
-        return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-    }
-
-    return NewStreamReader(resp.Body), nil
+// Close closes the underlying reader
+func (sr *StreamReader) Close() error {
+	return sr.closer.Close()
 }

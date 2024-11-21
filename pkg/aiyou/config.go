@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2023 Cloud Temple
+Copyright (C) 2024 Cloud Temple
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -17,31 +17,31 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package aiyou
 
 import (
-    "errors"
-    "time"
+	"errors"
+	"time"
 )
 
 // Config contient les paramètres de configuration pour le client AI.YOU.
 type Config struct {
-    BaseURL    string
-    APIKey     string
-    Timeout    time.Duration
-    RetryCount int
+	BaseURL    string
+	APIKey     string
+	Timeout    time.Duration
+	RetryCount int
 }
 
 // Validate vérifie que la configuration est valide.
 func (c *Config) Validate() error {
-    if c.BaseURL == "" {
-        return errors.New("BaseURL est requis")
-    }
-    if c.APIKey == "" {
-        return errors.New("APIKey est requis")
-    }
-    if c.Timeout <= 0 {
-        c.Timeout = 30 * time.Second // Valeur par défaut
-    }
-    if c.RetryCount < 0 {
-        c.RetryCount = 0
-    }
-    return nil
+	if c.BaseURL == "" {
+		return errors.New("BaseURL est requis")
+	}
+	if c.APIKey == "" {
+		return errors.New("APIKey est requis")
+	}
+	if c.Timeout <= 0 {
+		c.Timeout = 30 * time.Second // Valeur par défaut
+	}
+	if c.RetryCount < 0 {
+		c.RetryCount = 0
+	}
+	return nil
 }

@@ -6,9 +6,11 @@
 *.dylib
 *.test
 *.out
+code.json
 
 # Dépendances
 /vendor/
+/docs/api/
 
 # Fichiers de configuration d'IDE
 .idea/
