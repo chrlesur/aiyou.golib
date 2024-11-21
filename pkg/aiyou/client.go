@@ -19,33 +19,93 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package aiyou
 
 import (
-    "log"
-    "net/http"
+	"context"
+	"log"
+	"net/http"
+	"time"
+    "bufio"
+    "bytes"
 )
 
-// Client represents an AI.YOU API client.
+// Client represents a client for the AI.YOU API.
 type Client struct {
-    baseURL    string
-    httpClient *http.Client
-    logger     *log.Logger
-    // Add other necessary fields
+	baseURL    string
+	httpClient *http.Client
+	logger     *log.Logger
+	auth       Authenticator
 }
 
-// NewClient creates a new AI.YOU API client.
-func NewClient(baseURL string, options ...ClientOption) (*Client, error) {
-    // Implementation will be added later
-    return nil, nil
+// NewClient creates a new instance of Client with the given email and password.
+func NewClient(email, password string, options ...ClientOption) (*Client, error) {
+	client := &Client{
+		baseURL:    "https://ai.dragonflygroup.fr", // URL de base par défaut
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		logger:     log.New(log.Writer(), "aiyou: ", log.LstdFlags),
+	}
+
+	for _, option := range options {
+		option(client)
+	}
+
+	auth := NewJWTAuthenticator(email, password, client.baseURL, client.httpClient)
+	client.auth = auth
+
+	return client, nil
 }
 
-// ClientOption allows setting custom parameters to the client.
-type ClientOption func(*Client) error
+// AuthenticatedRequest performs an authenticated request to the API.
+func (c *Client) AuthenticatedRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	if err := c.auth.Authenticate(ctx); err != nil {
+		return nil, err
+	}
 
-// WithLogger sets a custom logger for the client.
-func WithLogger(logger *log.Logger) ClientOption {
-    return func(c *Client) error {
-        c.logger = logger
-        return nil
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.auth.Token())
+
+	// Ajoutez ici la logique pour ajouter le corps de la requête si nécessaire
+
+	return c.httpClient.Do(req)
+}
+
+// SetBaseURL sets the base URL for API requests.
+func (c *Client) SetBaseURL(url string) {
+	c.baseURL = url
+}
+
+// SetLogger sets the logger for the client.
+func (c *Client) SetLogger(logger *log.Logger) {
+	c.logger = logger
+}
+
+// CreateChatCompletion is a convenience method for creating a chat completion
+func (c *Client) CreateChatCompletion(ctx context.Context, messages []Message, assistantID string) (*ChatCompletionResponse, error) {
+    req := ChatCompletionRequest{
+        Messages:    messages,
+        AssistantID: assistantID,
+        // Set default values for other fields
+        Temperature:  0.7,
+        TopP:         1,
+        PromptSystem: "",
+        Stream:       false,
     }
+    return c.ChatCompletion(ctx, req)
 }
 
-// Add other necessary types and functions
+// CreateChatCompletionStream is a convenience method for creating a streaming chat completion
+func (c *Client) CreateChatCompletionStream(ctx context.Context, messages []Message, assistantID string) (io.ReadCloser, error) {
+    req := ChatCompletionRequest{
+        Messages:    messages,
+        AssistantID: assistantID,
+        // Set default values for other fields
+        Temperature:  0.7,
+        TopP:         1,
+        PromptSystem: "",
+        Stream:       true,
+    }
+    return c.ChatCompletionStream(ctx, req)
+}
+
