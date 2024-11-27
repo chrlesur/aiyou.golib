@@ -60,9 +60,8 @@ func NewClient(email, password string, options ...ClientOption) (*Client, error)
 
 	client.safeLog = SafeLog(client.logger)
 
-	auth := NewJWTAuthenticator(email, password, client.baseURL, client.httpClient)
-	auth.SetLogger(client.logger)
-	client.auth = auth
+    auth := NewJWTAuthenticator(email, password, client.baseURL, client.httpClient, client.logger)
+    client.auth = auth
 
 	return client, nil
 }
@@ -116,7 +115,7 @@ func (c *Client) AuthenticatedRequest(ctx context.Context, method, path string, 
 			return &RateLimitError{RetryAfter: 60}
 		}
 
-		c.safeLog(INFO, "Request completed with status: %d", resp.StatusCode)
+		c.safeLog(INFO, "Request completed with status: %v", resp.StatusCode)
 		return nil
 	})
 

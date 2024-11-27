@@ -89,6 +89,7 @@ func TestChatCompletionStream(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error writing chunk: %v", err)
 			}
+			t.Logf("Sent chunk: %s", jsonData) // Log the sent data
 			w.(http.Flusher).Flush()
 		}
 	}))
@@ -122,8 +123,15 @@ func TestChatCompletionStream(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error reading chunk: %v", err)
 		}
+		if chunk == nil {
+			t.Logf("Received nil chunk")
+			continue
+		}
 		chunkCount++
-		if chunk.Choices[0].Message.Content[0].Text != "Hello" {
+		t.Logf("Received chunk: %+v", chunk)
+		if len(chunk.Choices) == 0 || len(chunk.Choices[0].Message.Content) == 0 {
+			t.Errorf("Unexpected chunk content: %+v", chunk)
+		} else if chunk.Choices[0].Message.Content[0].Text != "Hello" {
 			t.Errorf("Unexpected chunk content: %s", chunk.Choices[0].Message.Content[0].Text)
 		}
 	}

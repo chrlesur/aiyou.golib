@@ -22,6 +22,8 @@ package aiyou
 import (
 	"fmt"
 	"io"
+	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -75,7 +77,18 @@ func (l *defaultLogger) log(level LogLevel, format string, args ...interface{}) 
 	if level >= l.level {
 		msg := fmt.Sprintf(format, args...)
 		timestamp := time.Now().Format(time.RFC3339)
-		fmt.Fprintf(l.writer, "[%s] %s: %s\n", timestamp, level.String(), msg)
+
+		// Get file and line information
+		_, file, line, ok := runtime.Caller(2) // Use 2 to get the caller of the logging function
+		if !ok {
+			file = "unknown"
+			line = 0
+		}
+
+		// Extract just the filename from the full path
+		filename := filepath.Base(file)
+
+		fmt.Fprintf(l.writer, "[%s] %s %s:%d: %s\n", timestamp, level.String(), filename, line, msg)
 	}
 }
 

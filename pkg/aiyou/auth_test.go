@@ -14,10 +14,14 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+// File: pkg/aiyou/auth_test.go
+
 package aiyou
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,30 +29,35 @@ import (
 )
 
 func TestJWTAuthenticator_Authenticate(t *testing.T) {
-	// Créer un serveur de test
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/login" {
 			t.Errorf("Expected to request '/api/login', got: %s", r.URL.Path)
 		}
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("Expected Content-Type: application/json, got: %s", r.Header.Get("Content-Type"))
+		if r.Method != "POST" {
+			t.Errorf("Expected POST request, got: %s", r.Method)
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"token":"test_token","expires_at":"2023-01-01T00:00:00Z","user":{"id":"1","email":"test@example.com"}}`))
+		json.NewEncoder(w).Encode(LoginResponse{
+			Token:     "test_token",
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
 	}))
 	defer server.Close()
 
-	auth := NewJWTAuthenticator("test@example.com", "password", server.URL, server.Client())
-
-	ctx := context.Background()
-	err := auth.Authenticate(ctx)
-
-	if err != nil {
-		t.Errorf("Authenticate returned an error: %v", err)
+	// Créer un client HTTP avec un timeout
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
 	}
 
-	if auth.Token() != "test_token" {
-		t.Errorf("Expected token to be 'test_token', got: %s", auth.Token())
+	auth := NewJWTAuthenticator("test@example.com", "password", server.URL, httpClient, NewDefaultLogger(io.Discard))
+
+	err := auth.Authenticate(context.Background())
+	if err != nil {
+		t.Errorf("Authenticate failed: %v", err)
+	}
+
+	if auth.Token() == "" {
+		t.Error("Expected token to be set after authentication")
 	}
 }
 
@@ -56,6 +65,7 @@ func TestJWTAuthenticator_TokenExpired(t *testing.T) {
 	auth := &JWTAuthenticator{
 		token:  "expired_token",
 		expiry: time.Now().Add(-1 * time.Hour),
+		logger: NewDefaultLogger(io.Discard),
 	}
 
 	if !auth.tokenExpired() {

@@ -119,36 +119,40 @@ func (c *Client) ChatCompletionStream(ctx context.Context, req ChatCompletionReq
 
 // ReadChunk reads and processes a single chunk from the stream
 func (sr *StreamReader) ReadChunk() (*ChatCompletionResponse, error) {
-	if sr.logger != nil {
-		sr.logger.Debugf("Reading stream chunk")
-	}
-	line, err := sr.reader.ReadBytes('\n')
-	if err != nil {
-		if err == io.EOF {
-			if sr.logger != nil {
-				sr.logger.Infof("End of stream reached")
-			}
-		} else {
-			if sr.logger != nil {
-				sr.logger.Errorf("Error reading stream: %v", err)
-			}
-		}
-		return nil, err
-	}
+    line, err := sr.reader.ReadBytes('\n')
+    if err != nil {
+        if err == io.EOF {
+            if sr.logger != nil {
+                sr.logger.Infof("End of stream reached")
+            }
+        } else {
+            if sr.logger != nil {
+                sr.logger.Errorf("Error reading stream: %v", err)
+            }
+        }
+        return nil, err
+    }
 
-	line = bytes.TrimPrefix(line, []byte("data: "))
-	var chunk ChatCompletionResponse
-	if err := json.Unmarshal(line, &chunk); err != nil {
-		if sr.logger != nil {
-			sr.logger.Errorf("Failed to unmarshal chunk: %v", err)
-		}
-		return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
-	}
+    if sr.logger != nil {
+        sr.logger.Debugf("Raw chunk data: %s", string(line))
+    }
 
-	if sr.logger != nil {
-		sr.logger.Debugf("Chunk read successfully")
-	}
-	return &chunk, nil
+    line = bytes.TrimPrefix(line, []byte("data: "))
+    line = bytes.TrimSpace(line)
+
+    if len(line) == 0 {
+        return nil, nil // Skip empty lines
+    }
+
+    var chunk ChatCompletionResponse
+    if err := json.Unmarshal(line, &chunk); err != nil {
+        if sr.logger != nil {
+            sr.logger.Errorf("Failed to unmarshal chunk: %v", err)
+        }
+        return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
+    }
+
+    return &chunk, nil
 }
 
 // SetLogger sets a custom logger for the StreamReader

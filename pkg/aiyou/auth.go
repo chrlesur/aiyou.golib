@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"time"
 )
 
@@ -41,13 +42,16 @@ type JWTAuthenticator struct {
 }
 
 // NewJWTAuthenticator creates a new instance of JWTAuthenticator.
-func NewJWTAuthenticator(email, password, baseURL string, client *http.Client) *JWTAuthenticator {
+func NewJWTAuthenticator(email, password, baseURL string, client *http.Client, logger Logger) *JWTAuthenticator {
+	if logger == nil {
+		logger = NewDefaultLogger(io.Discard) // Default silent logger
+	}
 	return &JWTAuthenticator{
 		email:    email,
 		password: password,
 		baseURL:  baseURL,
 		client:   client,
-		logger:   NewDefaultLogger(io.Discard), // Default silent logger
+		logger:   logger,
 	}
 }
 
@@ -63,7 +67,7 @@ func (a *JWTAuthenticator) Authenticate(ctx context.Context) error {
 		return nil
 	}
 
-	a.logger.Infof("Authenticating user: %s", a.email)
+	a.logger.Infof("Authenticating user: %s", maskSensitiveInfo(a.email))
 	loginReq := LoginRequest{
 		Email:    a.email,
 		Password: a.password,
@@ -117,4 +121,17 @@ func (a *JWTAuthenticator) Token() string {
 // tokenExpired checks if the current token has expired.
 func (a *JWTAuthenticator) tokenExpired() bool {
 	return a.token == "" || time.Now().After(a.expiry)
+}
+
+// maskSensitiveInfo masque les informations sensibles dans une chaîne
+func maskSensitiveInfo(input string) string {
+	// Masquer les adresses e-mail
+	emailPattern := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
+	maskedInput := emailPattern.ReplaceAllString(input, "[EMAIL REDACTED]")
+
+	// Masquer les tokens JWT
+	tokenPattern := regexp.MustCompile(`Bearer\s+[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*`)
+	maskedInput = tokenPattern.ReplaceAllString(maskedInput, "Bearer [TOKEN REDACTED]")
+
+	return maskedInput
 }
