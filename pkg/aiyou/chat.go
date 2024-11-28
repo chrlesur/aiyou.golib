@@ -47,112 +47,86 @@ func NewStreamReader(r io.ReadCloser, logger Logger) *StreamReader {
 // ChatCompletion sends a chat completion request and returns the response
 func (c *Client) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	c.logger.Debugf("Starting ChatCompletion request")
-	var resp *ChatCompletionResponse
-	err := retryOperation(ctx, c.logger, c.maxRetries, c.initialDelay, func() error {
-		var err error
-		endpoint := "/api/v1/chat/completions"
-		jsonData, err := json.Marshal(req)
-		if err != nil {
-			c.logger.Errorf("Failed to marshal request: %v", err)
-			return fmt.Errorf("failed to marshal request: %w", err)
-		}
 
-		c.logger.Debugf("Sending ChatCompletion request to %s", endpoint)
-		httpResp, err := c.AuthenticatedRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
-		if err != nil {
-			c.logger.Errorf("ChatCompletion request failed: %v", err)
-			return &NetworkError{Err: err}
-		}
-		defer httpResp.Body.Close()
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		c.logger.Errorf("Failed to marshal request: %v", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
 
-		if httpResp.StatusCode != http.StatusOK {
-			c.logger.Warnf("Unexpected status code: %d", httpResp.StatusCode)
-			return &APIError{StatusCode: httpResp.StatusCode, Message: fmt.Sprintf("unexpected status code: %d", httpResp.StatusCode)}
-		}
+	resp, err := c.AuthenticatedRequest(ctx, "POST", "/api/v1/chat/completions", bytes.NewReader(jsonData))
+	if err != nil {
+		c.logger.Errorf("ChatCompletion request failed: %v", err)
+		return nil, fmt.Errorf("chat completion request failed: %w", err)
+	}
+	defer resp.Body.Close()
 
-		resp = &ChatCompletionResponse{}
-		if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
-			c.logger.Errorf("Failed to decode response: %v", err)
-			return fmt.Errorf("failed to decode response: %w", err)
-		}
+	if resp.StatusCode != http.StatusOK {
+		c.logger.Warnf("Unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 
-		c.logger.Infof("ChatCompletion request successful")
-		return nil
-	})
+	var chatResp ChatCompletionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		c.logger.Errorf("Failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
 
-	return resp, err
+	c.logger.Infof("ChatCompletion request successful")
+	return &chatResp, nil
 }
 
 // ChatCompletionStream sends a streaming chat completion request
 func (c *Client) ChatCompletionStream(ctx context.Context, req ChatCompletionRequest) (*StreamReader, error) {
-	c.logger.Debugf("Starting ChatCompletionStream request")
-	var streamReader *StreamReader
-	err := retryOperation(ctx, c.logger, c.maxRetries, c.initialDelay, func() error {
-		endpoint := "/api/v1/chat/completions"
-		req.Stream = true
-		jsonData, err := json.Marshal(req)
-		if err != nil {
-			c.logger.Errorf("Failed to marshal request: %v", err)
-			return fmt.Errorf("failed to marshal request: %w", err)
-		}
+	req.Stream = true
 
-		c.logger.Debugf("Sending ChatCompletionStream request to %s", endpoint)
-		resp, err := c.AuthenticatedRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
-		if err != nil {
-			c.logger.Errorf("ChatCompletionStream request failed: %v", err)
-			return &NetworkError{Err: err}
-		}
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		c.logger.Errorf("Failed to marshal request: %v", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
 
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			c.logger.Warnf("Unexpected status code: %d", resp.StatusCode)
-			return &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("unexpected status code: %d", resp.StatusCode)}
-		}
+	resp, err := c.AuthenticatedRequest(ctx, "POST", "/api/v1/chat/completions", bytes.NewReader(jsonData))
+	if err != nil {
+		c.logger.Errorf("ChatCompletionStream request failed: %v", err)
+		return nil, fmt.Errorf("chat completion stream request failed: %w", err)
+	}
 
-		streamReader = NewStreamReader(resp.Body, c.logger)
-		c.logger.Infof("ChatCompletionStream request successful, streaming started")
-		return nil
-	})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		c.logger.Warnf("Unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 
-	return streamReader, err
+	return NewStreamReader(resp.Body, c.logger), nil
 }
 
 // ReadChunk reads and processes a single chunk from the stream
 func (sr *StreamReader) ReadChunk() (*ChatCompletionResponse, error) {
-    line, err := sr.reader.ReadBytes('\n')
-    if err != nil {
-        if err == io.EOF {
-            if sr.logger != nil {
-                sr.logger.Infof("End of stream reached")
-            }
-        } else {
-            if sr.logger != nil {
-                sr.logger.Errorf("Error reading stream: %v", err)
-            }
-        }
-        return nil, err
-    }
+	line, err := sr.reader.ReadBytes('\n')
+	if err != nil {
+		if err == io.EOF {
+			sr.logger.Infof("End of stream reached")
+		} else {
+			sr.logger.Errorf("Error reading stream: %v", err)
+		}
+		return nil, err
+	}
 
-    if sr.logger != nil {
-        sr.logger.Debugf("Raw chunk data: %s", string(line))
-    }
+	line = bytes.TrimPrefix(line, []byte(""))
+	line = bytes.TrimSpace(line)
 
-    line = bytes.TrimPrefix(line, []byte("data: "))
-    line = bytes.TrimSpace(line)
+	if len(line) == 0 {
+		return nil, nil
+	}
 
-    if len(line) == 0 {
-        return nil, nil // Skip empty lines
-    }
+	var chunk ChatCompletionResponse
+	if err := json.Unmarshal(line, &chunk); err != nil {
+		sr.logger.Errorf("Failed to unmarshal chunk: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
+	}
 
-    var chunk ChatCompletionResponse
-    if err := json.Unmarshal(line, &chunk); err != nil {
-        if sr.logger != nil {
-            sr.logger.Errorf("Failed to unmarshal chunk: %v", err)
-        }
-        return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
-    }
-
-    return &chunk, nil
+	return &chunk, nil
 }
 
 // SetLogger sets a custom logger for the StreamReader

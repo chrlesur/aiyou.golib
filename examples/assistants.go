@@ -22,9 +22,25 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/chrlesur/aiyou.golib"
 )
+
+// truncateText prend un texte et le tronque à environ 30 mots
+// en s'assurant de ne pas couper au milieu d'un mot
+func truncateText(text string, wordLimit int) string {
+	words := strings.Fields(text)
+	if len(words) <= wordLimit {
+		return text
+	}
+
+	// Prendre les premiers mots jusqu'à la limite
+	truncated := strings.Join(words[:wordLimit], " ")
+
+	// Ajouter des points de suspension
+	return truncated + "..."
+}
 
 func main() {
 	client, err := aiyou.NewClient("your-email@example.com", "your-password")
@@ -39,10 +55,12 @@ func main() {
 	}
 
 	// Afficher les assistants
-	fmt.Printf("Total assistants: %d\n", assistants.Total)
-	for _, assistant := range assistants.Assistants {
-		fmt.Printf("Assistant: %s (%s)\n", assistant.Name, assistant.ID)
-		fmt.Printf("Description: %s\n", assistant.Description)
-		fmt.Printf("Created: %s\n\n", assistant.CreatedAt)
+	fmt.Printf("Total assistants: %d\n", assistants.TotalItems)
+	for _, assistant := range assistants.Members {
+		fmt.Printf("\nAssistant: %s (%s)\n", assistant.Name, assistant.AssistantID)
+		if len(assistant.ThreadHistories) > 0 {
+			summary := truncateText(assistant.ThreadHistories[0].FirstMessage, 30)
+			fmt.Printf("Last conversation: %s\n", summary)
+		}
 	}
 }

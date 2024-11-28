@@ -94,62 +94,61 @@ func WithBaseURL(url string) ClientOption {
 // while masking sensitive information.
 func (c *Client) AuthenticatedRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	c.safeLog(DEBUG, "Preparing authenticated request: %s %s", method, path)
-
+   
 	// Appliquer le rate limiting avant la tentative de requête
 	if c.rateLimiter != nil {
-		if err := c.rateLimiter.Wait(ctx); err != nil {
-			c.safeLog(WARN, "Client-side rate limit exceeded: %v", err)
-			waitTime := c.rateLimiter.GetWaitTime()
-			return nil, &RateLimitError{
-				RetryAfter:   int(waitTime.Seconds()),
-				IsClientSide: true,
-			}
-		}
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+	c.safeLog(WARN, "Client-side rate limit exceeded: %v", err)
+	waitTime := c.rateLimiter.GetWaitTime()
+	return nil, &RateLimitError{
+	RetryAfter: int(waitTime.Seconds()),
+	IsClientSide: true,
 	}
-
+	}
+	}
+   
 	var resp *http.Response
 	err := retryOperation(ctx, c.logger, c.maxRetries, c.initialDelay, func() error {
-		if err := c.auth.Authenticate(ctx); err != nil {
-			c.safeLog(ERROR, "Authentication failed: %v", err)
-			return &AuthenticationError{Message: err.Error()}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
-		if err != nil {
-			c.safeLog(ERROR, "Failed to create request: %v", err)
-			return fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Authorization", "Bearer "+c.auth.Token())
-		req.Header.Set("Content-Type", "application/json")
-
-		c.safeLog(DEBUG, "Sending request to %s", req.URL)
-		resp, err = c.httpClient.Do(req)
-		if err != nil {
-			c.safeLog(ERROR, "Request failed: %v", err)
-			return &NetworkError{Err: err}
-		}
-
-		// Gestion du rate limiting côté serveur
-		if resp.StatusCode == http.StatusTooManyRequests {
-			c.safeLog(WARN, "Server-side rate limit exceeded, retrying after 60 seconds")
-			return &RateLimitError{
-				RetryAfter:   60,
-				IsClientSide: false,
-			}
-		}
-
-		c.safeLog(INFO, "Request completed with status: %v", resp.StatusCode)
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
+	if err := c.auth.Authenticate(ctx); err != nil {
+	c.safeLog(ERROR, "Authentication failed: %v", err)
+	return &AuthenticationError{Message: err.Error()}
 	}
-
+   
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+	c.safeLog(ERROR, "Failed to create request: %v", err)
+	return fmt.Errorf("failed to create request: %w", err)
+	}
+   
+	req.Header.Set("Authorization", "Bearer "+c.auth.Token())
+	req.Header.Set("Content-Type", "application/json")
+   
+	c.safeLog(DEBUG, "Sending request to %s", req.URL)
+	resp, err = c.httpClient.Do(req)
+	if err != nil {
+	c.safeLog(ERROR, "Request failed: %v", err)
+	return &NetworkError{Err: err}
+	}
+   
+	// Gestion du rate limiting côté serveur
+	if resp.StatusCode == http.StatusTooManyRequests {
+	c.safeLog(WARN, "Server-side rate limit exceeded, retrying after 60 seconds")
+	return &RateLimitError{
+	RetryAfter: 60,
+	IsClientSide: false,
+	}
+	}
+   
+	c.safeLog(INFO, "Request completed with status: %v", resp.StatusCode)
+	return nil
+	})
+   
+	if err != nil {
+	return nil, err
+	}
+   
 	return resp, nil
-}
-
+   }
 // SetBaseURL sets the base URL for API requests.
 func (c *Client) SetBaseURL(url string) {
 	c.baseURL = url
@@ -163,13 +162,10 @@ func (c *Client) SetLogger(logger Logger) {
 // CreateChatCompletion is a convenience method for creating a chat completion
 func (c *Client) CreateChatCompletion(ctx context.Context, messages []Message, assistantID string) (*ChatCompletionResponse, error) {
 	req := ChatCompletionRequest{
-		Messages:    messages,
+		Messages: messages,
 		AssistantID: assistantID,
-		// Set default values for other fields
-		Temperature:  0.7,
-		TopP:         1,
-		PromptSystem: "",
-		Stream:       false,
+		Temperature: 0.7,
+		TopP: 1,
 	}
 	return c.ChatCompletion(ctx, req)
 }

@@ -50,30 +50,7 @@ type User struct {
 	FirstName    string `json:"firstName"`
 }
 
-// ChatCompleter gère les requêtes de complétion de chat.
-type ChatCompleter interface {
-	Complete(ctx context.Context, input ChatCompletionInput) (*ChatCompletionOutput, error)
-}
-
-// ChatCompletionInput représente l'entrée pour une requête de complétion de chat.
-type ChatCompletionInput struct {
-	Messages []Message
-	// Autres champs à ajouter selon la spécification de l'API
-}
-
-// ChatCompletionOutput représente la sortie d'une requête de complétion de chat.
-type ChatCompletionOutput struct {
-	Response string
-	// Autres champs à ajouter selon la spécification de l'API
-}
-
-// Message represents a single message in the chat completion request
-type Message struct {
-	Role    string        `json:"role"`
-	Content []ContentPart `json:"content"`
-}
-
-// ChatCompletionRequest represents the request structure for chat completion
+// Gardons uniquement ces structures pour le chat
 type ChatCompletionRequest struct {
 	Messages     []Message `json:"messages"`
 	AssistantID  string    `json:"assistantId"`
@@ -85,13 +62,6 @@ type ChatCompletionRequest struct {
 	ThreadID     string    `json:"threadId,omitempty"`
 }
 
-// ContentPart represents a part of the message content
-type ContentPart struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-// ChatCompletionResponse represents the response structure for chat completion
 type ChatCompletionResponse struct {
 	ID      string   `json:"id"`
 	Object  string   `json:"object"`
@@ -99,6 +69,18 @@ type ChatCompletionResponse struct {
 	Model   string   `json:"model"`
 	Usage   Usage    `json:"usage"`
 	Choices []Choice `json:"choices"`
+}
+
+// Message represents a single message in the chat completion request
+type Message struct {
+	Role    string        `json:"role"`
+	Content []ContentPart `json:"content"`
+}
+
+// ContentPart represents a part of the message content
+type ContentPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 // Usage represents the token usage information
@@ -114,22 +96,30 @@ type Choice struct {
 	FinishReason string  `json:"finish_reason"`
 }
 
-// Assistant représente un assistant dans le système AI.YOU
-type Assistant struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	ImageURL    string    `json:"imageUrl"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	ModelID     string    `json:"modelId"`
-	IsPublic    bool      `json:"isPublic"`
-}
-
 // AssistantsResponse représente la réponse de l'API pour la liste des assistants
 type AssistantsResponse struct {
-	Assistants []Assistant `json:"assistants"`
-	Total      int         `json:"total"`
+	Context    string      `json:"@context"`
+	ID         string      `json:"@id"`
+	Type       string      `json:"@type"`
+	TotalItems int         `json:"hydra:totalItems"`
+	Members    []Assistant `json:"hydra:member"`
+}
+
+// Assistant représente un assistant dans le système AI.YOU
+type Assistant struct {
+	ID              string          `json:"id"`
+	AssistantID     string          `json:"assistantId"`
+	Name            string          `json:"name"`
+	ThreadHistories []ThreadHistory `json:"threadHistories"`
+	Image           string          `json:"image"`
+	Model           string          `json:"model"`   // Ajouté
+	ModelAi         string          `json:"modelAi"` // Ajouté
+	Instructions    string          `json:"instructions"`
+}
+
+type ThreadHistory struct {
+	ThreadID     string `json:"threadId"`
+	FirstMessage string `json:"firstMessage"`
 }
 
 // Model représente un modèle dans le système AI.YOU
@@ -176,23 +166,41 @@ type ConversationThread struct {
 	Messages      []Message `json:"messages"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
-	AssistantID   string    `json:"assistantId"`
-	UserID        string    `json:"userId"`
+	AssistantID   string    `json:"assistantId"` // Back to string
+	UserID        string    `json:"userId"`      // Back to string
 	LastMessageAt time.Time `json:"lastMessageAt"`
+}
+
+// UserThreadsOutput représente la réponse de l'API pour la liste des threads
+type UserThreadsOutput struct {
+	Threads      []ConversationThread `json:"threads"`
+	TotalItems   int                  `json:"totalItems"`
+	ItemsPerPage int                  `json:"itemsPerPage"`
+	CurrentPage  int                  `json:"currentPage"`
+}
+
+type UserThreadsParams struct {
+	Page         int    `json:"page,omitempty"`
+	ItemsPerPage int    `json:"itemsPerPage,omitempty"`
+	Search       string `json:"search,omitempty"`
 }
 
 // SaveConversationRequest représente la requête pour sauvegarder une conversation
 type SaveConversationRequest struct {
-	Title       string    `json:"title"`
-	Messages    []Message `json:"messages"`
-	AssistantID string    `json:"assistantId"`
-	ThreadID    string    `json:"threadId,omitempty"`
+	AssistantID    string `json:"assistantId"`
+	Conversation   string `json:"conversation"`
+	ThreadID       string `json:"threadId,omitempty"`
+	FirstMessage   string `json:"firstMessage"`
+	ContentJson    string `json:"contentJson"`
+	ModelName      string `json:"modelName"`
+	IsNewAppThread bool   `json:"isNewAppThread"`
 }
 
 // SaveConversationResponse représente la réponse après sauvegarde d'une conversation
 type SaveConversationResponse struct {
-	Thread ConversationThread `json:"thread"`
-	Status string             `json:"status"`
+	ID        string `json:"id"`
+	Object    string `json:"object"`
+	CreatedAt int64  `json:"createdAt"`
 }
 
 // ThreadsResponse représente la réponse de l'API pour la liste des threads
@@ -221,11 +229,7 @@ type AudioTranscriptionRequest struct {
 
 // AudioTranscriptionResponse représente la réponse de transcription
 type AudioTranscriptionResponse struct {
-	Text      string    `json:"text"`      // Texte transcrit
-	Language  string    `json:"language"`  // Langue détectée
-	Duration  float64   `json:"duration"`  // Durée en secondes
-	CreatedAt time.Time `json:"createdAt"` // Horodatage de la transcription
-	Status    string    `json:"status"`    // Status de la transcription
+	Transcription string `json:"transcription"` // Changé de Text à Transcription
 }
 
 // SupportedAudioFormat liste les formats audio supportés

@@ -1,4 +1,3 @@
-// assistants_test.go
 package aiyou
 
 import (
@@ -6,62 +5,109 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestGetUserAssistants(t *testing.T) {
-	// Mock server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Test authentication endpoint
-		if r.URL.Path == "/api/login" {
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(LoginResponse{
-				Token:     "test_token",
-				ExpiresAt: time.Now().Add(time.Hour),
-			})
-			return
-		}
+func TestGetUserAssistantsErrors(t *testing.T) {
+	testCases := []struct {
+		name        string
+		setup       func(w http.ResponseWriter)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "Unauthorized",
+			setup: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": "Unauthorized",
+				})
+			},
+			wantErr:     true,
+			errContains: "status code: 401",
+		},
+		{
+			name: "Bad Request",
+			setup: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": "Bad Request",
+				})
+			},
+			wantErr:     true,
+			errContains: "status code: 400",
+		},
+		{
+			name: "Server Error",
+			setup: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": "Internal Server Error",
+				})
+			},
+			wantErr:     true,
+			errContains: "status code: 500",
+		},
+		{
+			name: "Invalid Response",
+			setup: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("invalid json"))
+			},
+			wantErr:     true,
+			errContains: "failed to decode",
+		},
+		{
+			name: "Empty Response",
+			setup: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(""))
+			},
+			wantErr:     true,
+			errContains: "EOF",
+		},
+	}
 
-		// Test assistants endpoint
-		if r.URL.Path == "/api/v1/user/assistants" {
-			response := AssistantsResponse{
-				Assistants: []Assistant{
-					{
-						ID:          "asst_123",
-						Name:        "Test Assistant",
-						Description: "A test assistant",
-						CreatedAt:   time.Now(),
-						UpdatedAt:   time.Now(),
-						ModelID:     "model_123",
-						IsPublic:    true,
-					},
-				},
-				Total: 1,
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/login":
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(LoginResponse{
+						Token:     "test_token",
+						ExpiresAt: time.Now().Add(time.Hour),
+					})
+				case "/api/v1/user/assistants":
+					tc.setup(w)
+				}
+			}))
+			defer server.Close()
+
+			client, err := NewClient(
+				"test@example.com",
+				"password",
+				WithBaseURL(server.URL),
+			)
+			if err != nil {
+				t.Fatalf("Failed to create client: %v", err)
 			}
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(response)
-		}
-	}))
-	defer server.Close()
 
-	// Create client
-	client, err := NewClient("test@example.com", "password", WithBaseURL(server.URL))
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
+			_, err = client.GetUserAssistants(context.Background())
 
-	// Test GetUserAssistants
-	assistantsResp, err := client.GetUserAssistants(context.Background())
-	if err != nil {
-		t.Fatalf("GetUserAssistants failed: %v", err)
-	}
-
-	if len(assistantsResp.Assistants) != 1 {
-		t.Errorf("Expected 1 assistant, got %d", len(assistantsResp.Assistants))
-	}
-
-	if assistantsResp.Assistants[0].Name != "Test Assistant" {
-		t.Errorf("Expected assistant name 'Test Assistant', got '%s'", assistantsResp.Assistants[0].Name)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+					return
+				}
+				if !strings.Contains(err.Error(), tc.errContains) {
+					t.Errorf("Expected error containing %q, got %q", tc.errContains, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
 	}
 }

@@ -22,10 +22,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 )
 
 // GetUserAssistants récupère la liste des assistants disponibles pour l'utilisateur
-func (c *Client) GetUserAssistants(ctx context.Context) (*AssistantsResponse, error) {
+func (c *Client) GetUserAssistants(ctx context.Context) ([]Assistant, error) {
 	endpoint := "/api/v1/user/assistants"
 	c.logger.Debugf("Fetching user assistants from %s", endpoint)
 
@@ -36,12 +38,29 @@ func (c *Client) GetUserAssistants(ctx context.Context) (*AssistantsResponse, er
 	}
 	defer resp.Body.Close()
 
-	var assistantsResp AssistantsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&assistantsResp); err != nil {
+	// Vérifier le code de statut
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Lire le corps de la réponse
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.logger.Errorf("Failed to read response body: %v", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Vérifier si le corps est vide
+	if len(body) == 0 {
+		return nil, io.EOF
+	}
+
+	var assistants []Assistant
+	if err := json.Unmarshal(body, &assistants); err != nil {
 		c.logger.Errorf("Failed to decode assistants response: %v", err)
 		return nil, fmt.Errorf("failed to decode assistants response: %w", err)
 	}
 
-	c.logger.Infof("Successfully retrieved %d assistants", len(assistantsResp.Assistants))
-	return &assistantsResp, nil
+	c.logger.Infof("Successfully retrieved %d assistants", len(assistants))
+	return assistants, nil
 }

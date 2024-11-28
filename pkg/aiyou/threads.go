@@ -22,56 +22,50 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
-	"time"
+	"strconv"
 )
 
 // GetUserThreads récupère la liste des threads de l'utilisateur avec pagination et filtrage
-func (c *Client) GetUserThreads(ctx context.Context, filter *ThreadFilter) (*ThreadsResponse, error) {
+func (c *Client) GetUserThreads(ctx context.Context, params *UserThreadsParams) (*UserThreadsOutput, error) {
 	endpoint := "/api/v1/user/threads"
-	c.logger.Debugf("Fetching user threads with filter: %+v", filter)
-
-	// Construction des paramètres de requête
-	query := url.Values{}
-	if filter != nil {
-		if filter.AssistantID != "" {
-			query.Set("assistantId", filter.AssistantID)
+	if params != nil {
+		query := url.Values{}
+		if params.Page > 0 {
+			query.Set("page", strconv.Itoa(params.Page))
 		}
-		if !filter.StartDate.IsZero() {
-			query.Set("startDate", filter.StartDate.Format(time.RFC3339))
+		if params.ItemsPerPage > 0 {
+			query.Set("itemsPerPage", strconv.Itoa(params.ItemsPerPage))
 		}
-		if !filter.EndDate.IsZero() {
-			query.Set("endDate", filter.EndDate.Format(time.RFC3339))
+		if len(query) > 0 {
+			endpoint = fmt.Sprintf("%s?%s", endpoint, query.Encode())
 		}
-		if filter.Page > 0 {
-			query.Set("page", fmt.Sprintf("%d", filter.Page))
-		}
-		if filter.Limit > 0 {
-			query.Set("limit", fmt.Sprintf("%d", filter.Limit))
-		}
-	}
-
-	// Ajout des paramètres à l'URL si présents
-	if len(query) > 0 {
-		endpoint = fmt.Sprintf("%s?%s", endpoint, query.Encode())
 	}
 
 	resp, err := c.AuthenticatedRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
-		c.logger.Errorf("Failed to fetch threads: %v", err)
-		return nil, fmt.Errorf("failed to fetch threads: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var threadsResp ThreadsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&threadsResp); err != nil {
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var threadsOutput UserThreadsOutput
+	if err := json.NewDecoder(resp.Body).Decode(&threadsOutput); err != nil {
+		if err == io.EOF {
+			c.logger.Errorf("Empty response body")
+			return nil, err // Retourne directement l'erreur EOF
+		}
 		c.logger.Errorf("Failed to decode threads response: %v", err)
 		return nil, fmt.Errorf("failed to decode threads response: %w", err)
 	}
 
-	c.logger.Infof("Successfully retrieved %d threads (total: %d)",
-		len(threadsResp.Threads), threadsResp.Total)
-	return &threadsResp, nil
+	c.logger.Infof("Successfully retrieved %d threads", len(threadsOutput.Threads))
+	return &threadsOutput, nil
 }
 
 // DeleteThread supprime un thread spécifique

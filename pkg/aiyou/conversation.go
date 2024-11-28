@@ -22,12 +22,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 )
 
 // SaveConversation sauvegarde une conversation dans le système
 func (c *Client) SaveConversation(ctx context.Context, req SaveConversationRequest) (*SaveConversationResponse, error) {
 	endpoint := "/api/v1/save"
-	c.logger.Debugf("Saving conversation with title: %s", req.Title)
+	c.logger.Debugf("Saving conversation with assistant ID: %s", req.AssistantID)
+
+	// Validation basique
+	if req.AssistantID == "" {
+		return nil, fmt.Errorf("assistantId is required")
+	}
+	if req.Conversation == "" {
+		return nil, fmt.Errorf("conversation is required")
+	}
 
 	jsonData, err := json.Marshal(req)
 	if err != nil {
@@ -42,19 +52,24 @@ func (c *Client) SaveConversation(ctx context.Context, req SaveConversationReque
 	}
 	defer resp.Body.Close()
 
+	// Accepter à la fois 200 et 201 comme codes de succès
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
 	var saveResp SaveConversationResponse
 	if err := json.NewDecoder(resp.Body).Decode(&saveResp); err != nil {
 		c.logger.Errorf("Failed to decode save conversation response: %v", err)
 		return nil, fmt.Errorf("failed to decode save conversation response: %w", err)
 	}
 
-	c.logger.Infof("Successfully saved conversation with thread ID: %s", saveResp.Thread.ID)
+	c.logger.Infof("Successfully saved conversation with thread ID: %s", saveResp.ID)
 	return &saveResp, nil
 }
 
 // GetConversation récupère une conversation spécifique par son ID
 func (c *Client) GetConversation(ctx context.Context, threadID string) (*ConversationThread, error) {
-	endpoint := fmt.Sprintf("/api/v1/threads/%s", threadID)
+	endpoint := fmt.Sprintf("/api/v1/user/threads")
 	c.logger.Debugf("Fetching conversation thread: %s", threadID)
 
 	resp, err := c.AuthenticatedRequest(ctx, "GET", endpoint, nil)
@@ -64,12 +79,27 @@ func (c *Client) GetConversation(ctx context.Context, threadID string) (*Convers
 	}
 	defer resp.Body.Close()
 
-	var thread ConversationThread
-	if err := json.NewDecoder(resp.Body).Decode(&thread); err != nil {
-		c.logger.Errorf("Failed to decode conversation thread: %v", err)
-		return nil, fmt.Errorf("failed to decode conversation thread: %w", err)
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		c.logger.Errorf("Failed to read response body: %v", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	c.logger.Infof("Successfully retrieved conversation thread: %s", thread.ID)
-	return &thread, nil
+	c.logger.Debugf("Raw response: %s", string(body))
+
+	var threadsOutput UserThreadsOutput
+	if err := json.Unmarshal(body, &threadsOutput); err != nil {
+		c.logger.Errorf("Failed to decode threads response: %v", err)
+		return nil, fmt.Errorf("failed to decode threads response: %w", err)
+	}
+
+	// Chercher le thread spécifique dans la liste
+	for _, thread := range threadsOutput.Threads {
+		if thread.ID == threadID {
+			c.logger.Infof("Successfully found conversation thread: %s", thread.ID)
+			return &thread, nil
+		}
+	}
+
+	return nil, fmt.Errorf("thread not found: %s", threadID)
 }

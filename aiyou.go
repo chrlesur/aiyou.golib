@@ -22,34 +22,42 @@ type (
 	// Interfaces
 	Authenticator = internal.Authenticator
 	Logger        = internal.Logger
-	ChatCompleter = internal.ChatCompleter
 
-	// Structures de données Input/Output
-	ChatCompletionInput  = internal.ChatCompletionInput
-	ChatCompletionOutput = internal.ChatCompletionOutput
+	// Structures de messages et contenus
+	Message     = internal.Message
+	ContentPart = internal.ContentPart
 
-	// Structures de requêtes/réponses
-	LoginRequest               = internal.LoginRequest
-	LoginResponse              = internal.LoginResponse
-	User                       = internal.User
-	Message                    = internal.Message
-	ContentPart                = internal.ContentPart
-	ChatCompletionRequest      = internal.ChatCompletionRequest
-	ChatCompletionResponse     = internal.ChatCompletionResponse
-	Usage                      = internal.Usage
-	Choice                     = internal.Choice
-	Assistant                  = internal.Assistant
-	AssistantsResponse         = internal.AssistantsResponse
-	Model                      = internal.Model
-	ModelProperties            = internal.ModelProperties
-	ModelRequest               = internal.ModelRequest
-	ModelResponse              = internal.ModelResponse
-	ModelsResponse             = internal.ModelsResponse
-	ConversationThread         = internal.ConversationThread
-	SaveConversationRequest    = internal.SaveConversationRequest
-	SaveConversationResponse   = internal.SaveConversationResponse
-	ThreadsResponse            = internal.ThreadsResponse
-	ThreadFilter               = internal.ThreadFilter
+	// Structures d'authentification
+	LoginRequest  = internal.LoginRequest
+	LoginResponse = internal.LoginResponse
+	User          = internal.User
+
+	// Structures de chat completion
+	ChatCompletionRequest  = internal.ChatCompletionRequest
+	ChatCompletionResponse = internal.ChatCompletionResponse
+	Usage                  = internal.Usage
+	Choice                 = internal.Choice
+
+	// Structures des assistants
+	Assistant     = internal.Assistant
+	ThreadHistory = internal.ThreadHistory
+
+	// Structures des modèles
+	Model           = internal.Model
+	ModelProperties = internal.ModelProperties
+	ModelRequest    = internal.ModelRequest
+	ModelResponse   = internal.ModelResponse
+	ModelsResponse  = internal.ModelsResponse
+
+	// Structures des conversations et threads
+	ConversationThread       = internal.ConversationThread
+	SaveConversationRequest  = internal.SaveConversationRequest
+	SaveConversationResponse = internal.SaveConversationResponse
+	UserThreadsOutput        = internal.UserThreadsOutput
+	ThreadFilter             = internal.ThreadFilter
+	UserThreadsParams        = internal.UserThreadsParams
+
+	// Structures audio
 	AudioTranscriptionRequest  = internal.AudioTranscriptionRequest
 	AudioTranscriptionResponse = internal.AudioTranscriptionResponse
 	SupportedAudioFormat       = internal.SupportedAudioFormat
@@ -75,7 +83,7 @@ const (
 // Réexportation des variables
 var SupportedFormats = internal.SupportedFormats
 
-// Réexportation des fonctions de construction
+// Fonctions de construction
 func NewClient(email, password string, options ...ClientOption) (*Client, error) {
 	return internal.NewClient(email, password, options...)
 }
@@ -92,7 +100,7 @@ func NewRateLimiter(config RateLimiterConfig, logger Logger) *RateLimiter {
 	return internal.NewRateLimiter(config, logger)
 }
 
-// Réexportation des fonctions utilitaires
+// Fonctions utilitaires
 func NewTextMessage(role, text string) Message {
 	return internal.NewTextMessage(role, text)
 }
@@ -109,7 +117,7 @@ func SafeLog(logger Logger) func(level LogLevel, format string, args ...interfac
 	return internal.SafeLog(logger)
 }
 
-// Réexportation des options de configuration client
+// Options de configuration client
 func WithLogger(logger Logger) ClientOption {
 	return internal.WithLogger(logger)
 }
@@ -126,7 +134,7 @@ func WithRetry(maxRetries int, initialDelay time.Duration) ClientOption {
 	return internal.WithRetry(maxRetries, initialDelay)
 }
 
-// Extensions des interfaces pour les méthodes importantes du Client
+// Interface du Client
 type ClientInterface interface {
 	SetBaseURL(url string)
 	SetLogger(logger Logger)
@@ -134,13 +142,13 @@ type ClientInterface interface {
 	CreateChatCompletionStream(ctx context.Context, messages []Message, assistantID string) (*StreamReader, error)
 	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error)
 	ChatCompletionStream(ctx context.Context, req ChatCompletionRequest) (*StreamReader, error)
-	GetUserAssistants(ctx context.Context) (*AssistantsResponse, error)
+	GetUserAssistants(ctx context.Context) ([]Assistant, error)
 	TranscribeAudioFile(ctx context.Context, filePath string, opts *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error)
 	SaveConversation(ctx context.Context, req SaveConversationRequest) (*SaveConversationResponse, error)
 	GetConversation(ctx context.Context, threadID string) (*ConversationThread, error)
 	CreateModel(ctx context.Context, req ModelRequest) (*ModelResponse, error)
 	GetModels(ctx context.Context) (*ModelsResponse, error)
-	GetUserThreads(ctx context.Context, filter *ThreadFilter) (*ThreadsResponse, error)
+	GetUserThreads(ctx context.Context, params *UserThreadsParams) (*UserThreadsOutput, error)
 	DeleteThread(ctx context.Context, threadID string) error
 }
 

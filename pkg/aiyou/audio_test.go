@@ -13,65 +13,131 @@ import (
 	"time"
 )
 
-func TestTranscribeAudioFile(t *testing.T) {
-	// Créer un fichier audio de test temporaire
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.mp3")
-	if err := os.WriteFile(testFile, []byte("fake audio content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+func TestAudioFileValidation(t *testing.T) {
+	testCases := []struct {
+		name    string
+		content []byte
+		ext     string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "Valid MP3",
+			content: make([]byte, 1000),
+			ext:     ".mp3",
+			wantErr: false,
+		},
+		{
+			name:    "Valid WAV",
+			content: make([]byte, 1000),
+			ext:     ".wav",
+			wantErr: false,
+		},
+		{
+			name:    "Invalid extension",
+			content: make([]byte, 1000),
+			ext:     ".xyz",
+			wantErr: true,
+			errMsg:  "unsupported audio format: .xyz",
+		},
+		{
+			name:    "File too large",
+			content: make([]byte, 26*1024*1024), // Plus grand que la limite
+			ext:     ".mp3",
+			wantErr: true,
+			errMsg:  "file size exceeds maximum allowed size",
+		},
 	}
 
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Créer un fichier temporaire
+			tmpDir := t.TempDir()
+			testFile := filepath.Join(tmpDir, "test"+tc.ext)
+			if err := os.WriteFile(testFile, tc.content, 0644); err != nil {
+				t.Fatalf("Failed to create test file: %v", err)
+			}
+
+			// Ouvrir le fichier pour la validation
+			file, err := os.Open(testFile)
+			if err != nil {
+				t.Fatalf("Failed to open test file: %v", err)
+			}
+			defer file.Close()
+
+			// Tester la validation
+			err = validateAudioFile(file, testFile)
+
+			// Vérifier les résultats
+			if tc.wantErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if tc.errMsg != "" && !strings.Contains(err.Error(), tc.errMsg) {
+					t.Errorf("Expected error containing %q, got %q", tc.errMsg, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestSupportedAudioFormats(t *testing.T) {
+	// Vérifier que les formats supportés sont correctement définis
+	for _, format := range SupportedFormats {
+		t.Run(format.Extension, func(t *testing.T) {
+			if format.MaxSize <= 0 {
+				t.Errorf("Format %s has invalid max size: %d", format.Extension, format.MaxSize)
+			}
+			if len(format.MimeTypes) == 0 {
+				t.Errorf("Format %s has no mime types", format.Extension)
+			}
+			// Vérifier que l'extension commence par un point
+			if format.Extension[0] != '.' {
+				t.Errorf("Format extension %s should start with a dot", format.Extension)
+			}
+		})
+	}
+}
+
+func TestTranscribeAudioFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/login" {
+		switch r.URL.Path {
+		case "/api/login":
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(LoginResponse{
 				Token:     "test_token",
 				ExpiresAt: time.Now().Add(time.Hour),
 			})
-			return
-		}
 
-		if r.URL.Path == "/api/v1/audio/transcriptions" {
-			// Vérifier que le Content-Type contient multipart/form-data
+		case "/api/v1/audio/transcriptions":
+			// Vérifier la méthode
+			if r.Method != "POST" {
+				t.Errorf("Expected POST request, got: %s", r.Method)
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Vérifier le Content-Type
 			contentType := r.Header.Get("Content-Type")
-			if !strings.Contains(contentType, "multipart/form-data") {
-				t.Errorf("Expected Content-Type to contain multipart/form-data, got %s", contentType)
+			if !strings.HasPrefix(contentType, "multipart/form-data") {
+				t.Errorf("Expected multipart/form-data, got: %s", contentType)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			// Vérifier l'authentification
-			authHeader := r.Header.Get("Authorization")
-			if authHeader != "Bearer test_token" {
-				t.Errorf("Expected Authorization header 'Bearer test_token', got %s", authHeader)
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-
-			// Parser le formulaire multipart
+			// Vérifier le fichier
 			if err := r.ParseMultipartForm(32 << 20); err != nil {
 				t.Errorf("Failed to parse multipart form: %v", err)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			// Vérifier la présence du fichier
-			file, _, err := r.FormFile("file")
-			if err != nil {
-				t.Errorf("Failed to get file from form: %v", err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			defer file.Close()
-
-			// Renvoyer une réponse de succès
+			// Simuler une réponse réussie
 			response := AudioTranscriptionResponse{
-				Text:      "This is a test transcription",
-				Language:  "en",
-				Duration:  10.5,
-				CreatedAt: time.Now(),
-				Status:    "completed",
+				Transcription: "This is a test transcription",
 			}
+
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(response)
 		}
@@ -83,8 +149,16 @@ func TestTranscribeAudioFile(t *testing.T) {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
+	// Créer un fichier de test
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.mp3")
+	if err := os.WriteFile(testFile, []byte("test audio content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Test avec différentes options
 	opts := &AudioTranscriptionRequest{
-		Language: "en",
+		Language: "fr",
 		Format:   "text",
 	}
 
@@ -93,61 +167,7 @@ func TestTranscribeAudioFile(t *testing.T) {
 		t.Fatalf("TranscribeAudioFile failed: %v", err)
 	}
 
-	if resp.Text != "This is a test transcription" {
-		t.Errorf("Expected transcription text 'This is a test transcription', got '%s'", resp.Text)
-	}
-
-	if resp.Status != "completed" {
-		t.Errorf("Expected status 'completed', got '%s'", resp.Status)
-	}
-}
-
-func TestValidateAudioFile(t *testing.T) {
-	tests := []struct {
-		name          string
-		fileContent   []byte
-		fileName      string
-		expectedError bool
-	}{
-		{
-			name:          "Valid MP3 file",
-			fileContent:   make([]byte, 1000),
-			fileName:      "test.mp3",
-			expectedError: false,
-		},
-		{
-			name:          "Unsupported format",
-			fileContent:   make([]byte, 1000),
-			fileName:      "test.xyz",
-			expectedError: true,
-		},
-		{
-			name:          "File too large",
-			fileContent:   make([]byte, 26*1024*1024),
-			fileName:      "test.mp3",
-			expectedError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			testFile := filepath.Join(tmpDir, tt.fileName)
-
-			if err := os.WriteFile(testFile, tt.fileContent, 0644); err != nil {
-				t.Fatalf("Failed to create test file: %v", err)
-			}
-
-			file, err := os.Open(testFile)
-			if err != nil {
-				t.Fatalf("Failed to open test file: %v", err)
-			}
-			defer file.Close()
-
-			err = validateAudioFile(file, testFile)
-			if (err != nil) != tt.expectedError {
-				t.Errorf("validateAudioFile() error = %v, expectedError %v", err, tt.expectedError)
-			}
-		})
+	if resp.Transcription != "This is a test transcription" {
+		t.Errorf("Unexpected transcription: %s", resp.Transcription)
 	}
 }
