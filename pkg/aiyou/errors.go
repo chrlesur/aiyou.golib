@@ -22,8 +22,8 @@ import "fmt"
 // APIError représente une erreur retournée par l'API AI.YOU.
 // Il contient le code de statut HTTP et le message d'erreur.
 type APIError struct {
-    StatusCode int
-    Message    string
+	StatusCode int
+	Message    string
 }
 
 func (e *APIError) Error() string {
@@ -42,16 +42,21 @@ func (e *AuthenticationError) Error() string {
 // RateLimitError indique que la limite de taux a été atteinte.
 // RetryAfter indique le nombre de secondes à attendre avant de réessayer.
 type RateLimitError struct {
-    RetryAfter int
+	RetryAfter   int  // en secondes
+	IsClientSide bool // pour distinguer entre le rate limiting côté client et serveur
 }
 
 func (e *RateLimitError) Error() string {
-	return fmt.Sprintf("Rate limit exceeded. Retry after %d seconds", e.RetryAfter)
+	source := "server"
+	if e.IsClientSide {
+		source = "client"
+	}
+	return fmt.Sprintf("%s-side rate limit exceeded. Retry after %d seconds", source, e.RetryAfter)
 }
 
 // NetworkError représente une erreur de réseau survenue lors d'une requête.
 type NetworkError struct {
-    Err error
+	Err error
 }
 
 func (e *NetworkError) Error() string {

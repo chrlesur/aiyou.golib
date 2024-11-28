@@ -17,35 +17,49 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package aiyou
 
 import (
-    "errors"
-    "testing"
+	"errors"
+	"testing"
 )
 
 func TestAPIError(t *testing.T) {
-    err := &APIError{StatusCode: 400, Message: "Bad Request"}
-    if err.Error() != "API error: 400 - Bad Request" {
-        t.Errorf("APIError.Error() = %v, want %v", err.Error(), "API error: 400 - Bad Request")
-    }
+	err := &APIError{StatusCode: 400, Message: "Bad Request"}
+	if err.Error() != "API error: 400 - Bad Request" {
+		t.Errorf("APIError.Error() = %v, want %v", err.Error(), "API error: 400 - Bad Request")
+	}
 }
 
 func TestAuthenticationError(t *testing.T) {
-    err := &AuthenticationError{Message: "Invalid credentials"}
-    if err.Error() != "Authentication error: Invalid credentials" {
-        t.Errorf("AuthenticationError.Error() = %v, want %v", err.Error(), "Authentication error: Invalid credentials")
-    }
+	err := &AuthenticationError{Message: "Invalid credentials"}
+	if err.Error() != "Authentication error: Invalid credentials" {
+		t.Errorf("AuthenticationError.Error() = %v, want %v", err.Error(), "Authentication error: Invalid credentials")
+	}
 }
 
 func TestRateLimitError(t *testing.T) {
-    err := &RateLimitError{RetryAfter: 30}
-    if err.Error() != "Rate limit exceeded. Retry after 30 seconds" {
-        t.Errorf("RateLimitError.Error() = %v, want %v", err.Error(), "Rate limit exceeded. Retry after 30 seconds")
-    }
+	err := &RateLimitError{
+		RetryAfter:   30,
+		IsClientSide: false,
+	}
+	expected := "server-side rate limit exceeded. Retry after 30 seconds"
+	if err.Error() != expected {
+		t.Errorf("RateLimitError.Error() = %v, want %v", err.Error(), expected)
+	}
+
+	// Test aussi le cas client-side
+	errClient := &RateLimitError{
+		RetryAfter:   30,
+		IsClientSide: true,
+	}
+	expectedClient := "client-side rate limit exceeded. Retry after 30 seconds"
+	if errClient.Error() != expectedClient {
+		t.Errorf("RateLimitError.Error() = %v, want %v", errClient.Error(), expectedClient)
+	}
 }
 
 func TestNetworkError(t *testing.T) {
-    underlying := errors.New("connection reset")
-    err := &NetworkError{Err: underlying}
-    if err.Error() != "Network error: connection reset" {
-        t.Errorf("NetworkError.Error() = %v, want %v", err.Error(), "Network error: connection reset")
-    }
+	underlying := errors.New("connection reset")
+	err := &NetworkError{Err: underlying}
+	if err.Error() != "Network error: connection reset" {
+		t.Errorf("NetworkError.Error() = %v, want %v", err.Error(), "Network error: connection reset")
+	}
 }

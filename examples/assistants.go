@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+// examples/assistants.go
 package main
 
 import (
@@ -31,25 +32,17 @@ func main() {
 		log.Fatalf("Error creating client: %v", err)
 	}
 
-	// Create a complex message using MessageBuilder
-	builder := aiyou.NewMessageBuilder("user", client.Logger())
-	message := builder.
-		AddText("I have a question about this image:").
-		AddImage("https://example.com/image.jpg").
-		AddText("What can you tell me about it?").
-		Build()
-
-	// Create a chat completion request with the complex message
-	req := aiyou.ChatCompletionRequest{
-		Messages:    []aiyou.Message{message},
-		AssistantID: "your-assistant-id",
-	}
-
-	// Send the request
-	resp, err := client.ChatCompletion(context.Background(), req)
+	// Récupérer les assistants
+	assistants, err := client.GetUserAssistants(context.Background())
 	if err != nil {
-		log.Fatalf("Error in ChatCompletion: %v", err)
+		log.Fatalf("Error getting assistants: %v", err)
 	}
 
-	fmt.Printf("AI response: %s\n", resp.Choices[0].Message.Content[0].Text)
+	// Afficher les assistants
+	fmt.Printf("Total assistants: %d\n", assistants.Total)
+	for _, assistant := range assistants.Assistants {
+		fmt.Printf("Assistant: %s (%s)\n", assistant.Name, assistant.ID)
+		fmt.Printf("Description: %s\n", assistant.Description)
+		fmt.Printf("Created: %s\n\n", assistant.CreatedAt)
+	}
 }

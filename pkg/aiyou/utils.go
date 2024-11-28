@@ -26,26 +26,17 @@ import (
 
 var (
 	// Patterns for sensitive information
-	emailPattern    = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
-	tokenPattern    = regexp.MustCompile(`(Bearer\s+)([A-Za-z0-9-._~+/]+=*)`)
-	passwordPattern = regexp.MustCompile(`("password"\s*:\s*)"[^"]*"`)
+	emailRegex    = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
+	tokenRegex    = regexp.MustCompile(`Bearer\s+[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*`)
+	passwordRegex = regexp.MustCompile(`("password"\s*:\s*)"[^"]*"`)
 )
 
 // MaskSensitiveInfo masks sensitive information in the given string.
 // It replaces email addresses, JWT tokens, and password fields with redacted placeholders.
 func MaskSensitiveInfo(input string) string {
-	// Mask email addresses
-	emailPattern := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
-	maskedInput := emailPattern.ReplaceAllString(input, "[EMAIL REDACTED]")
-
-	// Mask JWT tokens
-	tokenPattern := regexp.MustCompile(`Bearer\s+[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*`)
-	maskedInput = tokenPattern.ReplaceAllString(maskedInput, "Bearer [TOKEN REDACTED]")
-
-	// Mask passwords
-	passwordPattern := regexp.MustCompile(`("password"\s*:\s*)"[^"]*"`)
-	maskedInput = passwordPattern.ReplaceAllString(maskedInput, `${1}"[PASSWORD REDACTED]"`)
-
+	maskedInput := emailRegex.ReplaceAllString(input, "[EMAIL REDACTED]")
+	maskedInput = tokenRegex.ReplaceAllString(maskedInput, "Bearer [TOKEN REDACTED]")
+	maskedInput = passwordRegex.ReplaceAllString(maskedInput, "${1}\"[PASSWORD REDACTED]\"")
 	return maskedInput
 }
 
@@ -54,17 +45,14 @@ func MaskSensitiveInfo(input string) string {
 // while automatically masking sensitive information.
 func SafeLog(logger Logger) func(level LogLevel, format string, args ...interface{}) {
 	return func(level LogLevel, format string, args ...interface{}) {
-		// Mask sensitive info in format and args
 		safeFormat := MaskSensitiveInfo(format)
 		safeArgs := make([]interface{}, len(args))
 		for i, arg := range args {
 			safeArgs[i] = MaskSensitiveInfo(fmt.Sprint(arg))
 		}
 
-		// Create the masked message
 		maskedMessage := fmt.Sprintf(safeFormat, safeArgs...)
 
-		// Log the masked message
 		switch level {
 		case DEBUG:
 			logger.Debugf("%s", maskedMessage)

@@ -38,10 +38,18 @@ type Client struct {
 	initialDelay time.Duration
 	logger       Logger
 	safeLog      func(level LogLevel, format string, args ...interface{})
+	rateLimiter  *RateLimiter
 }
 
 // ClientOption is a function type to modify Client.
 type ClientOption func(*Client)
+
+// Nouvelle option de configuration
+func WithRateLimiter(config RateLimiterConfig) ClientOption {
+	return func(c *Client) {
+		c.rateLimiter = NewRateLimiter(config, c.logger)
+	}
+}
 
 // NewClient creates a new instance of Client with the given email and password.
 
@@ -60,8 +68,8 @@ func NewClient(email, password string, options ...ClientOption) (*Client, error)
 
 	client.safeLog = SafeLog(client.logger)
 
-    auth := NewJWTAuthenticator(email, password, client.baseURL, client.httpClient, client.logger)
-    client.auth = auth
+	auth := NewJWTAuthenticator(email, password, client.baseURL, client.httpClient, client.logger)
+	client.auth = auth
 
 	return client, nil
 }
@@ -87,6 +95,18 @@ func WithBaseURL(url string) ClientOption {
 func (c *Client) AuthenticatedRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	c.safeLog(DEBUG, "Preparing authenticated request: %s %s", method, path)
 
+	// Appliquer le rate limiting avant la tentative de requête
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			c.safeLog(WARN, "Client-side rate limit exceeded: %v", err)
+			waitTime := c.rateLimiter.GetWaitTime()
+			return nil, &RateLimitError{
+				RetryAfter:   int(waitTime.Seconds()),
+				IsClientSide: true,
+			}
+		}
+	}
+
 	var resp *http.Response
 	err := retryOperation(ctx, c.logger, c.maxRetries, c.initialDelay, func() error {
 		if err := c.auth.Authenticate(ctx); err != nil {
@@ -110,9 +130,13 @@ func (c *Client) AuthenticatedRequest(ctx context.Context, method, path string, 
 			return &NetworkError{Err: err}
 		}
 
+		// Gestion du rate limiting côté serveur
 		if resp.StatusCode == http.StatusTooManyRequests {
-			c.safeLog(WARN, "Rate limit exceeded, retrying after 60 seconds")
-			return &RateLimitError{RetryAfter: 60}
+			c.safeLog(WARN, "Server-side rate limit exceeded, retrying after 60 seconds")
+			return &RateLimitError{
+				RetryAfter:   60,
+				IsClientSide: false,
+			}
 		}
 
 		c.safeLog(INFO, "Request completed with status: %v", resp.StatusCode)

@@ -8,11 +8,11 @@ the Free Software Foundation, either version 3 of the License, or
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
 // File: pkg/aiyou/logging.go
@@ -20,10 +20,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package aiyou
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 )
 
@@ -40,6 +42,13 @@ const (
 	// ERROR level for error messages
 	ERROR
 )
+
+// Pool de buffers pour le logging
+var logBufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
 
 // Logger interface extends the standard log.Logger interface with additional methods
 // for different log levels and the ability to set the logging level.
@@ -75,11 +84,16 @@ func (l *defaultLogger) SetLevel(level LogLevel) {
 // log logs a message at the specified level
 func (l *defaultLogger) log(level LogLevel, format string, args ...interface{}) {
 	if level >= l.level {
-		msg := fmt.Sprintf(format, args...)
-		timestamp := time.Now().Format(time.RFC3339)
+		// Récupérer un buffer du pool
+		buf := logBufferPool.Get().(*bytes.Buffer)
+		buf.Reset() // Réinitialiser le buffer pour réutilisation
+		defer func() {
+			// Remettre le buffer dans le pool après utilisation
+			logBufferPool.Put(buf)
+		}()
 
 		// Get file and line information
-		_, file, line, ok := runtime.Caller(2) // Use 2 to get the caller of the logging function
+		_, file, line, ok := runtime.Caller(2)
 		if !ok {
 			file = "unknown"
 			line = 0
@@ -88,7 +102,14 @@ func (l *defaultLogger) log(level LogLevel, format string, args ...interface{}) 
 		// Extract just the filename from the full path
 		filename := filepath.Base(file)
 
-		fmt.Fprintf(l.writer, "[%s] %s %s:%d: %s\n", timestamp, level.String(), filename, line, msg)
+		// Construire le message dans le buffer
+		timestamp := time.Now().Format(time.RFC3339)
+		fmt.Fprintf(buf, "[%s] %s %s:%d: ", timestamp, level.String(), filename, line)
+		fmt.Fprintf(buf, format, args...)
+		buf.WriteByte('\n')
+
+		// Écrire le contenu du buffer en une seule opération
+		l.writer.Write(buf.Bytes())
 	}
 }
 

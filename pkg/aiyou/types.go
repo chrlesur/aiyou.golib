@@ -113,3 +113,124 @@ type Choice struct {
 	Message      Message `json:"message"`
 	FinishReason string  `json:"finish_reason"`
 }
+
+// Assistant représente un assistant dans le système AI.YOU
+type Assistant struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	ImageURL    string    `json:"imageUrl"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	ModelID     string    `json:"modelId"`
+	IsPublic    bool      `json:"isPublic"`
+}
+
+// AssistantsResponse représente la réponse de l'API pour la liste des assistants
+type AssistantsResponse struct {
+	Assistants []Assistant `json:"assistants"`
+	Total      int         `json:"total"`
+}
+
+// Model représente un modèle dans le système AI.YOU
+type Model struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Version     string          `json:"version"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
+	Properties  ModelProperties `json:"properties"`
+}
+
+// ModelProperties représente les propriétés spécifiques d'un modèle
+type ModelProperties struct {
+	MaxTokens    int      `json:"maxTokens"`
+	Temperature  float64  `json:"temperature"`
+	Provider     string   `json:"provider"`
+	Capabilities []string `json:"capabilities"`
+}
+
+// ModelRequest représente la requête de création d'un modèle
+type ModelRequest struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Properties  ModelProperties `json:"properties"`
+}
+
+// ModelResponse représente la réponse de l'API pour les opérations sur les modèles
+type ModelResponse struct {
+	Model Model `json:"model"`
+}
+
+// ModelsResponse représente la réponse pour la liste des modèles
+type ModelsResponse struct {
+	Models []Model `json:"models"`
+	Total  int     `json:"total"`
+}
+
+// ConversationThread représente un fil de conversation
+type ConversationThread struct {
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	Messages      []Message `json:"messages"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	AssistantID   string    `json:"assistantId"`
+	UserID        string    `json:"userId"`
+	LastMessageAt time.Time `json:"lastMessageAt"`
+}
+
+// SaveConversationRequest représente la requête pour sauvegarder une conversation
+type SaveConversationRequest struct {
+	Title       string    `json:"title"`
+	Messages    []Message `json:"messages"`
+	AssistantID string    `json:"assistantId"`
+	ThreadID    string    `json:"threadId,omitempty"`
+}
+
+// SaveConversationResponse représente la réponse après sauvegarde d'une conversation
+type SaveConversationResponse struct {
+	Thread ConversationThread `json:"thread"`
+	Status string             `json:"status"`
+}
+
+// ThreadsResponse représente la réponse de l'API pour la liste des threads
+type ThreadsResponse struct {
+	Threads []ConversationThread `json:"threads"`
+	Total   int                  `json:"total"`
+	Page    int                  `json:"page"`
+	Limit   int                  `json:"limit"`
+}
+
+// ThreadFilter représente les options de filtrage pour la récupération des threads
+type ThreadFilter struct {
+	AssistantID string    `json:"assistantId,omitempty"`
+	StartDate   time.Time `json:"startDate,omitempty"`
+	EndDate     time.Time `json:"endDate,omitempty"`
+	Page        int       `json:"page,omitempty"`
+	Limit       int       `json:"limit,omitempty"`
+}
+
+// AudioTranscriptionRequest représente la requête de transcription audio
+type AudioTranscriptionRequest struct {
+	FileName string `json:"fileName"`
+	Language string `json:"language,omitempty"` // Code langue ISO (ex: "fr", "en")
+	Format   string `json:"format,omitempty"`   // Format de sortie souhaité
+}
+
+// AudioTranscriptionResponse représente la réponse de transcription
+type AudioTranscriptionResponse struct {
+	Text      string    `json:"text"`      // Texte transcrit
+	Language  string    `json:"language"`  // Langue détectée
+	Duration  float64   `json:"duration"`  // Durée en secondes
+	CreatedAt time.Time `json:"createdAt"` // Horodatage de la transcription
+	Status    string    `json:"status"`    // Status de la transcription
+}
+
+// SupportedAudioFormat liste les formats audio supportés
+type SupportedAudioFormat struct {
+	Extension string   `json:"extension"`
+	MimeTypes []string `json:"mimeTypes"`
+	MaxSize   int64    `json:"maxSize"` // Taille maximale en bytes
+}
