@@ -8,11 +8,11 @@ the Free Software Foundation, either version 3 of the License, or
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
 // File: examples/conversation.go
@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -38,31 +39,43 @@ func main() {
 
 	client, err := aiyou.NewClient(
 		"christophe.lesur@cloud-temple.com",
-		"jitkin-Vobjav-jythi3",
+		"XXXXXX",
 		aiyou.WithLogger(logger),
 	)
 	if err != nil {
 		log.Fatalf("Error creating client: %v", err)
 	}
 
-	// Créer une conversation à sauvegarder
-	conversation := aiyou.SaveConversationRequest{
-		Title:       "Test de conversation",
-		AssistantID: "asst_VZAhLX1aPVnVQPXCtvsdAgg4",
-		Messages: []aiyou.Message{
-			{
-				Role: "user",
-				Content: []aiyou.ContentPart{
-					{Type: "text", Text: "Bonjour, pouvez-vous m'aider ?"},
-				},
-			},
-			{
-				Role: "assistant",
-				Content: []aiyou.ContentPart{
-					{Type: "text", Text: "Bien sûr, comment puis-je vous aider ?"},
-				},
+	// Préparer les messages
+	messages := []aiyou.Message{
+		{
+			Role: "user",
+			Content: []aiyou.ContentPart{
+				{Type: "text", Text: "Bonjour, pouvez-vous m'aider ?"},
 			},
 		},
+		{
+			Role: "assistant",
+			Content: []aiyou.ContentPart{
+				{Type: "text", Text: "Bien sûr, comment puis-je vous aider ?"},
+			},
+		},
+	}
+
+	// Créer le JSON de conversation
+	messagesJSON, err := json.Marshal(messages)
+	if err != nil {
+		log.Fatalf("Erreur lors de la sérialisation des messages: %v", err)
+	}
+
+	// Créer une conversation à sauvegarder
+	conversation := aiyou.SaveConversationRequest{
+		AssistantID:    "asst_VZAhLX1aPVnVQPXCtvsdAgg4",
+		Conversation:   "Test de conversation",
+		FirstMessage:   messages[0].Content[0].Text,
+		ContentJson:    string(messagesJSON),
+		ModelName:      "gpt-4",
+		IsNewAppThread: true,
 	}
 
 	// Sauvegarder la conversation
@@ -76,14 +89,15 @@ func main() {
 	fmt.Printf("\nConversation sauvegardée avec succès !\n")
 	fmt.Printf("Thread ID: %s\n", resp.ID)
 	fmt.Printf("Created at: %s\n", time.Unix(resp.CreatedAt, 0))
-	fmt.Printf("Messages count: %d\n", len(resp.Messages))
 
-	// Attente initiale
+	// Attente initiale pour la propagation
 	fmt.Printf("\nAttente de 5 secondes pour la propagation...\n")
 	time.Sleep(5 * time.Second)
 
-	// Boucle de tentatives pour récupérer la conversation
+	// Récupérer la conversation avec retry
 	var thread *aiyou.ConversationThread
+	var lastError error
+
 	for i := 0; i < maxRetries; i++ {
 		fmt.Printf("\nTentative %d/%d de récupération de la conversation...\n", i+1, maxRetries)
 
@@ -92,27 +106,45 @@ func main() {
 			break
 		}
 
+		lastError = err
 		if i < maxRetries-1 {
+			fmt.Printf("Erreur: %v\n", err)
 			fmt.Printf("Attente de %v avant nouvelle tentative...\n", retryDelay)
 			time.Sleep(retryDelay)
-		} else {
-			log.Printf("Échec de la récupération après %d tentatives: %v", maxRetries, err)
-			return
 		}
 	}
+
+	if lastError != nil {
+		log.Printf("Échec de la récupération après %d tentatives: %v", maxRetries, lastError)
+		return
+	}
+
+	// Afficher les détails de la conversation
 	fmt.Printf("\nConversation récupérée :\n")
 	fmt.Printf("Thread ID: %s\n", thread.ID)
 	fmt.Printf("Title: %s\n", thread.Title)
 	fmt.Printf("Assistant ID: %s\n", thread.AssistantID)
-	fmt.Printf("User ID: %s\n", thread.UserID)
-	fmt.Printf("Created at: %s\n", thread.CreatedAt.Format(time.RFC3339))
-	fmt.Printf("Last message at: %s\n", thread.LastMessageAt.Format(time.RFC3339))
+	if thread.CreatedAt.IsZero() {
+		fmt.Println("Created at: Non disponible")
+	} else {
+		fmt.Printf("Created at: %s\n", thread.CreatedAt.Format(time.RFC3339))
+	}
+	if thread.LastMessageAt.IsZero() {
+		fmt.Println("Last message at: Non disponible")
+	} else {
+		fmt.Printf("Last message at: %s\n", thread.LastMessageAt.Format(time.RFC3339))
+	}
 
-	for i, msg := range thread.Messages {
-		fmt.Printf("\nMessage %d:\n", i+1)
-		fmt.Printf("Role: %s\n", msg.Role)
-		for _, content := range msg.Content {
-			fmt.Printf("Content: %s\n", content.Text)
+	// Afficher les messages
+	if len(thread.Messages) == 0 {
+		fmt.Println("\nAucun message dans la conversation")
+	} else {
+		for i, msg := range thread.Messages {
+			fmt.Printf("\nMessage %d:\n", i+1)
+			fmt.Printf("Role: %s\n", msg.Role)
+			for _, content := range msg.Content {
+				fmt.Printf("Content (%s): %s\n", content.Type, content.Text)
+			}
 		}
 	}
 }
