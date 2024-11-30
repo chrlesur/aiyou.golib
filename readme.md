@@ -12,40 +12,40 @@ go get github.com/chrlesur/aiyou.golib
 
 L'organisation des fichiers et répertoires du package :
 
-aiyou.golib/
-├── LICENSE.txt # Licence GPL-3.0
-├── README.md # Documentation principale
-├── go.mod # Définition du module Go
-├── aiyou.go # Point d'entrée du package, exports publics
-│
-├── pkg/ # Code source principal
-│ └── aiyou/
-│ ├── assistants.go # Gestion des assistants IA
-│ ├── audio.go # Transcription audio
-│ ├── auth.go # Authentification et gestion des tokens
-│ ├── chat.go # Fonctionnalités de chat completion
-│ ├── client.go # Client HTTP et configuration
-│ ├── config.go # Structures de configuration
-│ ├── conversation.go # Gestion des conversations
-│ ├── errors.go # Types d'erreurs personnalisés
-│ ├── logging.go # Système de logging
-│ ├── models.go # Définitions des modèles
-│ ├── ratelimit.go # Système de rate limiting
-│ ├── retry.go # Logique de retry
-│ ├── threads.go # Gestion des threads de conversation
-│ ├── types.go # Définitions des types communs
-│ └── utils.go # Fonctions utilitaires
-│
-├── examples/ # Exemples d'utilisation
-│ ├── assistants.go # Exemple de gestion des assistants
-│ ├── audio.go # Exemple de transcription audio
-│ ├── conversation.go # Exemple de gestion des conversations
-│ ├── message_builder.go # Exemple d'utilisation du MessageBuilder
-│ ├── models.go # Exemple d'utilisation des modèles
-│ ├── rate_limiting.go # Exemple de rate limiting simple
-│ ├── rate_limiting_advanced.go # Exemple de rate limiting avancé
-│ ├── simple_client.go # Client en ligne de commande complet
-│ └── threads.go # Exemple de gestion des threads
+    aiyou.golib/
+    ├── LICENSE.txt # Licence GPL-3.0
+    ├── README.md # Documentation principale
+    ├── go.mod # Définition du module Go
+    ├── aiyou.go # Point d'entrée du package, exports publics
+    │
+    ├── pkg/ # Code source principal
+    │ └── aiyou/
+    │ ├── assistants.go # Gestion des assistants IA
+    │ ├── audio.go # Transcription audio
+    │ ├── auth.go # Authentification et gestion des tokens
+    │ ├── chat.go # Fonctionnalités de chat completion
+    │ ├── client.go # Client HTTP et configuration
+    │ ├── config.go # Structures de configuration
+    │ ├── conversation.go # Gestion des conversations
+    │ ├── errors.go # Types d'erreurs personnalisés
+    │ ├── logging.go # Système de logging
+    │ ├── models.go # Définitions des modèles
+    │ ├── ratelimit.go # Système de rate limiting
+    │ ├── retry.go # Logique de retry
+    │ ├── threads.go # Gestion des threads de conversation
+    │ ├── types.go # Définitions des types communs
+    │ └── utils.go # Fonctions utilitaires
+    │
+    ├── examples/ # Exemples d'utilisation
+    │ ├── assistants.go # Exemple de gestion des assistants
+    │ ├── audio.go # Exemple de transcription audio
+    │ ├── conversation.go # Exemple de gestion des conversations
+    │ ├── message_builder.go # Exemple d'utilisation du MessageBuilder
+    │ ├── models.go # Exemple d'utilisation des modèles
+    │ ├── rate_limiting.go # Exemple de rate limiting simple
+    │ ├── rate_limiting_advanced.go # Exemple de rate limiting avancé
+    │ ├── simple_client.go # Client en ligne de commande complet
+    │ └── threads.go # Exemple de gestion des threads
 
 ### Description des composants principaux
 
