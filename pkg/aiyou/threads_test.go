@@ -4,14 +4,13 @@ package aiyou
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
-
-// ... (garder TestGetUserThreads inchangé)
 
 func TestGetUserThreadsError(t *testing.T) {
 	testCases := []struct {
@@ -71,6 +70,10 @@ func TestGetUserThreadsError(t *testing.T) {
 					json.NewEncoder(w).Encode(LoginResponse{
 						Token:     "test_token",
 						ExpiresAt: time.Now().Add(time.Hour),
+						User: User{
+							ID:    1,
+							Email: "test@example.com",
+						},
 					})
 				case "/api/v1/user/threads":
 					tc.setup(w)
@@ -94,7 +97,6 @@ func TestGetUserThreadsError(t *testing.T) {
 
 			_, err = client.GetUserThreads(context.Background(), params)
 
-			// Vérification des erreurs
 			if tc.wantErr {
 				if err == nil {
 					t.Error("Expected error but got none")
@@ -118,6 +120,10 @@ func TestGetUserThreads(t *testing.T) {
 			json.NewEncoder(w).Encode(LoginResponse{
 				Token:     "test_token",
 				ExpiresAt: time.Now().Add(time.Hour),
+				User: User{
+					ID:    1,
+					Email: "test@example.com",
+				},
 			})
 
 		case "/api/v1/user/threads":
@@ -129,26 +135,22 @@ func TestGetUserThreads(t *testing.T) {
 				t.Error("Missing pagination parameters")
 			}
 
+			now := time.Now()
 			response := UserThreadsOutput{
 				Threads: []ConversationThread{
 					{
-						ID:          "thread_123",
-						Title:       "Test Thread",
-						AssistantID: "asst_123",
-						Messages: []Message{
-							{
-								Role: "user",
-								Content: []ContentPart{
-									{
-										Type: "text",
-										Text: "Hello!",
-									},
-								},
-							},
-						},
-						CreatedAt:     time.Now(),
-						UpdatedAt:     time.Now(),
-						LastMessageAt: time.Now(),
+						ID:                   "thread_123",
+						ThreadIdParam:        1,
+						Content:              "Test Thread",
+						AssistantName:        "Test Assistant",
+						AssistantModel:       stringPtr("gpt-4"),
+						AssistantId:          1,
+						AssistantIdOpenAi:    "asst_123",
+						FirstMessage:         "Hello!",
+						CreatedAt:            now,
+						UpdatedAt:            now,
+						IsNewAppThread:       true,
+						AssistantContentJson: `{"messages":[{"role":"user","content":[{"type":"text","text":"Hello!"}]}]}`,
 					},
 				},
 				TotalItems:   1,
@@ -196,11 +198,94 @@ func TestGetUserThreads(t *testing.T) {
 		if thread.ID != "thread_123" {
 			t.Errorf("Expected thread ID 'thread_123', got '%s'", thread.ID)
 		}
-		if thread.Title != "Test Thread" {
-			t.Errorf("Expected thread title 'Test Thread', got '%s'", thread.Title)
+		if thread.ThreadIdParam != 1 {
+			t.Errorf("Expected thread param ID 1, got %d", thread.ThreadIdParam)
 		}
-		if len(thread.Messages) != 1 {
-			t.Errorf("Expected 1 message, got %d", len(thread.Messages))
+		if thread.Content != "Test Thread" {
+			t.Errorf("Expected content 'Test Thread', got '%s'", thread.Content)
+		}
+		if thread.AssistantName != "Test Assistant" {
+			t.Errorf("Expected assistant name 'Test Assistant', got '%s'", thread.AssistantName)
+		}
+		if *thread.AssistantModel != "gpt-4" {
+			t.Errorf("Expected assistant model 'gpt-4', got '%s'", *thread.AssistantModel)
+		}
+		if thread.FirstMessage != "Hello!" {
+			t.Errorf("Expected first message 'Hello!', got '%s'", thread.FirstMessage)
 		}
 	}
+}
+
+func TestDeleteThread(t *testing.T) {
+	testCases := []struct {
+		name      string
+		threadID  string
+		status    int
+		wantError bool
+	}{
+		{
+			name:      "Successful deletion",
+			threadID:  "thread_123",
+			status:    http.StatusOK,
+			wantError: false,
+		},
+		{
+			name:      "Alternative success status",
+			threadID:  "thread_123",
+			status:    http.StatusNoContent,
+			wantError: false,
+		},
+		{
+			name:      "Not Found",
+			threadID:  "invalid_thread",
+			status:    http.StatusNotFound,
+			wantError: true,
+		},
+		{
+			name:      "Server Error",
+			threadID:  "thread_123",
+			status:    http.StatusInternalServerError,
+			wantError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/login":
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(LoginResponse{
+						Token:     "test_token",
+						ExpiresAt: time.Now().Add(time.Hour),
+						User: User{
+							ID:    1,
+							Email: "test@example.com",
+						},
+					})
+				case fmt.Sprintf("/api/v1/threads/%s", tc.threadID):
+					if r.Method != "DELETE" {
+						t.Errorf("Expected DELETE method, got %s", r.Method)
+					}
+					w.WriteHeader(tc.status)
+				}
+			}))
+			defer server.Close()
+
+			client, err := NewClient("test@example.com", "password", WithBaseURL(server.URL))
+			if err != nil {
+				t.Fatalf("Failed to create client: %v", err)
+			}
+
+			err = client.DeleteThread(context.Background(), tc.threadID)
+			if (err != nil) != tc.wantError {
+				t.Errorf("DeleteThread() error = %v, wantError %v", err, tc.wantError)
+			}
+		})
+	}
+}
+
+// Helper function to create string pointer
+func stringPtr(s string) *string {
+	return &s
 }

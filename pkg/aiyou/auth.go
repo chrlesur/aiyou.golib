@@ -67,7 +67,7 @@ func (a *JWTAuthenticator) Authenticate(ctx context.Context) error {
 		return nil
 	}
 
-	a.logger.Infof("Authenticating user: %s", maskSensitiveInfo(a.email))
+	a.logger.Debugf("Authenticating user: %s", maskSensitiveInfo(a.email))
 	loginReq := LoginRequest{
 		Email:    a.email,
 		Password: a.password,
@@ -109,7 +109,7 @@ func (a *JWTAuthenticator) Authenticate(ctx context.Context) error {
 	a.token = loginResp.Token
 	a.expiry = loginResp.ExpiresAt
 
-	a.logger.Infof("Authentication successful, token expires at %v", a.expiry)
+	a.logger.Debugf("Authentication successful, token expires at %v", a.expiry)
 	return nil
 }
 

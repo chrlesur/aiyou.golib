@@ -1,20 +1,3 @@
-/*
-Copyright (C) 2024 Cloud Temple
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
-
 // Package aiyou defines types used across the AI.YOU API client.
 package aiyou
 
@@ -35,6 +18,14 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// User represents a user in the AI.YOU system.
+type User struct {
+	ID           int    `json:"id"` // Changé de string à int
+	Email        string `json:"email"`
+	ProfileImage string `json:"profileImage"`
+	FirstName    string `json:"firstName"`
+}
+
 // LoginResponse represents the login response from the API.
 type LoginResponse struct {
 	Token     string    `json:"token"`
@@ -42,61 +33,64 @@ type LoginResponse struct {
 	User      User      `json:"user"`
 }
 
-// User represents a user in the AI.YOU system.
-type User struct {
-	ID           string `json:"id"`
-	Email        string `json:"email"`
-	ProfileImage string `json:"profileImage"`
-	FirstName    string `json:"firstName"`
-}
-
-// Gardons uniquement ces structures pour le chat
+// ChatCompletionRequest represents a request to the chat completions endpoint.
 type ChatCompletionRequest struct {
-	Messages     []Message `json:"messages"`
-	AssistantID  string    `json:"assistantId"`
-	Temperature  float32   `json:"temperature"`
-	TopP         float32   `json:"top_p"`
-	PromptSystem string    `json:"promptSystem"`
-	Stream       bool      `json:"stream"`
-	Stop         []string  `json:"stop,omitempty"`
-	ThreadID     string    `json:"threadId,omitempty"`
+	Messages     []Message `json:"messages"`               // Liste des messages de la conversation
+	AssistantID  string    `json:"assistantId"`            // ID de l'assistant à utiliser
+	Temperature  int       `json:"temperature"`            // Contrôle de la créativité (1-10)
+	TopP         float64   `json:"top_p"`                  // Contrôle de la diversité des réponses
+	Stream       bool      `json:"stream"`                 // Activer le mode streaming
+	PromptSystem string    `json:"promptSystem,omitempty"` // Message système personnalisé
+	Form         string    `json:"form,omitempty"`         // Format de sortie
+	Stop         []string  `json:"stop,omitempty"`         // Séquences d'arrêt
+	ThreadId     string    `json:"threadId,omitempty"`     // ID du thread de conversation
+	MaxTokens    *int      `json:"max_tokens,omitempty"`   // Nombre maximum de tokens
 }
 
-type ChatCompletionResponse struct {
-	ID      string   `json:"id"`
-	Object  string   `json:"object"`
-	Created int64    `json:"created"`
-	Model   string   `json:"model"`
-	Usage   Usage    `json:"usage"`
-	Choices []Choice `json:"choices"`
-}
-
-// Message represents a single message in the chat completion request
+// Message represents a single message in the conversation.
 type Message struct {
-	Role    string        `json:"role"`
-	Content []ContentPart `json:"content"`
+	Role    string        `json:"role"`    // Rôle du message (user, assistant, system)
+	Content []ContentPart `json:"content"` // Contenu du message
 }
 
-// ContentPart represents a part of the message content
+// ContentPart represents a part of the message content.
 type ContentPart struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type string `json:"type"` // Type de contenu (text, image, etc.)
+	Text string `json:"text"` // Texte du contenu
 }
 
-// Usage represents the token usage information
-type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+// ChatCompletionResponse represents the response from the chat completions endpoint.
+type ChatCompletionResponse struct {
+	ID      string   `json:"id"`              // Identifiant unique de la réponse
+	Object  string   `json:"object"`          // Type d'objet retourné
+	Created int64    `json:"created"`         // Timestamp de création
+	Model   string   `json:"model"`           // Modèle utilisé
+	Choices []Choice `json:"choices"`         // Liste des choix de réponse
+	Usage   *Usage   `json:"usage,omitempty"` // Statistiques d'utilisation
 }
 
-// Choice represents a single choice in the chat completion response
+// Choice represents a single completion choice in the response.
 type Choice struct {
-	Message      Message `json:"message"`
-	FinishReason string  `json:"finish_reason"`
+	Index        int     `json:"index"`                   // Index du choix
+	Message      Message `json:"message,omitempty"`       // Message pour mode non-streaming
+	Delta        *Delta  `json:"delta,omitempty"`         // Delta pour mode streaming
+	FinishReason string  `json:"finish_reason,omitempty"` // Raison de fin de génération
 }
 
-// AssistantsResponse représente la réponse de l'API pour la liste des assistants
+// Delta represents a streaming response delta.
+type Delta struct {
+	Role    string `json:"role,omitempty"`    // Rôle du message
+	Content string `json:"content,omitempty"` // Contenu du message
+}
+
+// Usage represents token usage information.
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`     // Nombre de tokens dans la requête
+	CompletionTokens int `json:"completion_tokens"` // Nombre de tokens dans la réponse
+	TotalTokens      int `json:"total_tokens"`      // Nombre total de tokens
+}
+
+// AssistantsResponse represents the response from the assistants endpoint.
 type AssistantsResponse struct {
 	Context    string      `json:"@context"`
 	ID         string      `json:"@id"`
@@ -105,87 +99,25 @@ type AssistantsResponse struct {
 	Members    []Assistant `json:"hydra:member"`
 }
 
-// Assistant représente un assistant dans le système AI.YOU
+// Assistant represents an AI assistant.
 type Assistant struct {
 	ID              string          `json:"id"`
 	AssistantID     string          `json:"assistantId"`
 	Name            string          `json:"name"`
 	ThreadHistories []ThreadHistory `json:"threadHistories"`
 	Image           string          `json:"image"`
-	Model           string          `json:"model"`   // Ajouté
-	ModelAi         string          `json:"modelAi"` // Ajouté
+	Model           string          `json:"model"`
+	ModelAi         string          `json:"modelAi"`
 	Instructions    string          `json:"instructions"`
 }
 
+// ThreadHistory represents the history of a conversation thread.
 type ThreadHistory struct {
 	ThreadID     string `json:"threadId"`
 	FirstMessage string `json:"firstMessage"`
 }
 
-// Model représente un modèle dans le système AI.YOU
-type Model struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Version     string          `json:"version"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
-	Properties  ModelProperties `json:"properties"`
-}
-
-// ModelProperties représente les propriétés spécifiques d'un modèle
-type ModelProperties struct {
-	MaxTokens    int      `json:"maxTokens"`
-	Temperature  float64  `json:"temperature"`
-	Provider     string   `json:"provider"`
-	Capabilities []string `json:"capabilities"`
-}
-
-// ModelRequest représente la requête de création d'un modèle
-type ModelRequest struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Properties  ModelProperties `json:"properties"`
-}
-
-// ModelResponse représente la réponse de l'API pour les opérations sur les modèles
-type ModelResponse struct {
-	Model Model `json:"model"`
-}
-
-// ModelsResponse représente la réponse pour la liste des modèles
-type ModelsResponse struct {
-	Models []Model `json:"models"`
-	Total  int     `json:"total"`
-}
-
-// ConversationThread représente un fil de conversation
-type ConversationThread struct {
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	Messages      []Message `json:"messages"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	AssistantID   string    `json:"assistantId"` // Back to string
-	UserID        string    `json:"userId"`      // Back to string
-	LastMessageAt time.Time `json:"lastMessageAt"`
-}
-
-// UserThreadsOutput représente la réponse de l'API pour la liste des threads
-type UserThreadsOutput struct {
-	Threads      []ConversationThread `json:"threads"`
-	TotalItems   int                  `json:"totalItems"`
-	ItemsPerPage int                  `json:"itemsPerPage"`
-	CurrentPage  int                  `json:"currentPage"`
-}
-
-type UserThreadsParams struct {
-	Page         int    `json:"page,omitempty"`
-	ItemsPerPage int    `json:"itemsPerPage,omitempty"`
-	Search       string `json:"search,omitempty"`
-}
-
-// SaveConversationRequest représente la requête pour sauvegarder une conversation
+// SaveConversationRequest represents a request to save a conversation.
 type SaveConversationRequest struct {
 	AssistantID    string `json:"assistantId"`
 	Conversation   string `json:"conversation"`
@@ -196,45 +128,111 @@ type SaveConversationRequest struct {
 	IsNewAppThread bool   `json:"isNewAppThread"`
 }
 
-// SaveConversationResponse représente la réponse après sauvegarde d'une conversation
+// SaveConversationResponse represents the response after saving a conversation.
 type SaveConversationResponse struct {
 	ID        string `json:"id"`
 	Object    string `json:"object"`
 	CreatedAt int64  `json:"createdAt"`
 }
 
-// ThreadsResponse représente la réponse de l'API pour la liste des threads
-type ThreadsResponse struct {
-	Threads []ConversationThread `json:"threads"`
-	Total   int                  `json:"total"`
-	Page    int                  `json:"page"`
-	Limit   int                  `json:"limit"`
+// ConversationThread represents a conversation thread.
+type ConversationThread struct {
+	ID                   string    `json:"id"`
+	ThreadIdParam        int       `json:"threadIdParam"`
+	Content              string    `json:"content"`
+	AssistantContentJson string    `json:"assistantContentJson"`
+	AssistantName        string    `json:"assistantName"`
+	AssistantModel       *string   `json:"assistantModel"`
+	AssistantId          int       `json:"assistantId"`
+	AssistantIdOpenAi    string    `json:"assistantIdOpenAi"`
+	FirstMessage         string    `json:"firstMessage"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+	IsNewAppThread       bool      `json:"isNewAppThread"`
 }
 
-// ThreadFilter représente les options de filtrage pour la récupération des threads
+// UserThreadsParams represents the parameters for retrieving user threads.
+type UserThreadsParams struct {
+	Page         int    `json:"page,omitempty"`
+	ItemsPerPage int    `json:"itemsPerPage,omitempty"`
+	Search       string `json:"search,omitempty"`
+}
+
+// UserThreadsOutput represents the response containing user threads.
+type UserThreadsOutput struct {
+	Threads      []ConversationThread `json:"threads"`
+	TotalItems   int                  `json:"totalItems"`
+	ItemsPerPage int                  `json:"itemsPerPage"`
+	CurrentPage  int                  `json:"currentPage"`
+}
+
+// AudioTranscriptionRequest represents an audio transcription request.
+type AudioTranscriptionRequest struct {
+	FileName string `json:"fileName"`           // Nom du fichier audio
+	Language string `json:"language,omitempty"` // Code langue ISO (ex: "fr", "en")
+	Format   string `json:"format,omitempty"`   // Format de sortie souhaité
+}
+
+// AudioTranscriptionResponse represents an audio transcription response.
+type AudioTranscriptionResponse struct {
+	Transcription string `json:"transcription"` // Texte transcrit
+   }
+
+// SupportedAudioFormat represents a supported audio format.
+type SupportedAudioFormat struct {
+	Extension string   `json:"extension"` // Extension du fichier (.mp3, .wav, etc.)
+	MimeTypes []string `json:"mimeTypes"` // Types MIME supportés
+	MaxSize   int64    `json:"maxSize"`   // Taille maximale en bytes
+}
+
+// Model represents an AI model in the system.
+type Model struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Version     string          `json:"version"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
+	Properties  ModelProperties `json:"properties"`
+}
+
+// ModelProperties represents the properties of an AI model.
+type ModelProperties struct {
+	MaxTokens    int      `json:"maxTokens"`
+	Temperature  float64  `json:"temperature"`
+	Provider     string   `json:"provider"`
+	Capabilities []string `json:"capabilities"`
+}
+
+// ModelRequest represents a request to create a new model.
+type ModelRequest struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Properties  ModelProperties `json:"properties"`
+}
+
+// ModelResponse represents the response when creating or retrieving a model.
+type ModelResponse struct {
+	Model Model `json:"model"`
+}
+
+// ModelsResponse represents the response when retrieving multiple models.
+type ModelsResponse struct {
+	Models []Model `json:"models"`
+	Total  int     `json:"total"`
+}
+
+// StreamOptions represents options for streaming responses.
+type StreamOptions struct {
+	IncludeUsage         bool `json:"include_usage"`
+	ContinuousUsageStats bool `json:"continuous_usage_stats"`
+}
+
+// ThreadFilter represents filter options for retrieving threads.
 type ThreadFilter struct {
 	AssistantID string    `json:"assistantId,omitempty"`
 	StartDate   time.Time `json:"startDate,omitempty"`
 	EndDate     time.Time `json:"endDate,omitempty"`
 	Page        int       `json:"page,omitempty"`
 	Limit       int       `json:"limit,omitempty"`
-}
-
-// AudioTranscriptionRequest représente la requête de transcription audio
-type AudioTranscriptionRequest struct {
-	FileName string `json:"fileName"`
-	Language string `json:"language,omitempty"` // Code langue ISO (ex: "fr", "en")
-	Format   string `json:"format,omitempty"`   // Format de sortie souhaité
-}
-
-// AudioTranscriptionResponse représente la réponse de transcription
-type AudioTranscriptionResponse struct {
-	Transcription string `json:"transcription"` // Changé de Text à Transcription
-}
-
-// SupportedAudioFormat liste les formats audio supportés
-type SupportedAudioFormat struct {
-	Extension string   `json:"extension"`
-	MimeTypes []string `json:"mimeTypes"`
-	MaxSize   int64    `json:"maxSize"` // Taille maximale en bytes
 }

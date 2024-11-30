@@ -8,59 +8,109 @@ the Free Software Foundation, either version 3 of the License, or
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-// File: examples/models.go
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/chrlesur/aiyou.golib"
 )
 
+const (
+	timeoutDuration = 30 * time.Second
+)
+
+// printModels affiche les détails des modèles disponibles de façon formatée
+func printModels(response *aiyou.AssistantsResponse) {
+	modelMap := make(map[string]bool)
+	fmt.Printf("\nModèles disponibles (sur %d assistants) :\n", response.TotalItems)
+
+	for _, assistant := range response.Members {
+		if assistant.Model != "" && !modelMap[assistant.Model] {
+			modelMap[assistant.Model] = true
+			fmt.Printf("\nModèle: %s\n", assistant.Model)
+		}
+		if assistant.ModelAi != "" && !modelMap[assistant.ModelAi] {
+			modelMap[assistant.ModelAi] = true
+			fmt.Printf("Modèle AI: %s\n", assistant.ModelAi)
+		}
+	}
+
+	fmt.Printf("\nNombre total de modèles uniques: %d\n", len(modelMap))
+	fmt.Println(strings.Repeat("-", 50))
+}
+
 func main() {
-	client, err := aiyou.NewClient("your-email@example.com", "your-password")
+	// Définition des flags
+	email := flag.String("email", "", "Email pour l'authentification (obligatoire)")
+	password := flag.String("password", "", "Mot de passe pour l'authentification (obligatoire)")
+	debug := flag.Bool("debug", false, "Active les logs de debug")
+	baseURL := flag.String("url", "https://ai.dragonflygroup.fr", "URL de base de l'API")
+	flag.Parse()
+
+	// Vérification des paramètres obligatoires
+	if *email == "" || *password == "" {
+		fmt.Println("Les paramètres email et password sont obligatoires")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	// Configuration du logger
+	logger := aiyou.NewDefaultLogger(os.Stdout)
+	if *debug {
+		logger.SetLevel(aiyou.DEBUG)
+	} else {
+		logger.SetLevel(aiyou.INFO)
+	}
+
+	// Création du client
+	client, err := aiyou.NewClient(
+		*email,
+		*password,
+		aiyou.WithLogger(logger),
+		aiyou.WithBaseURL(*baseURL),
+	)
 	if err != nil {
-		log.Fatalf("Error creating client: %v", err)
+		log.Fatalf("Erreur lors de la création du client: %v", err)
 	}
 
-	// Créer un nouveau modèle
-	modelReq := aiyou.ModelRequest{
-		Name:        "Custom GPT Model",
-		Description: "A custom GPT model for specific tasks",
-		Properties: aiyou.ModelProperties{
-			MaxTokens:    4096,
-			Temperature:  0.7,
-			Provider:     "OpenAI",
-			Capabilities: []string{"chat", "completion"},
-		},
-	}
+	// Context avec timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
+	defer cancel()
 
-	model, err := client.CreateModel(context.Background(), modelReq)
+	// Récupération des assistants pour obtenir les modèles disponibles
+	fmt.Println("Récupération des modèles via les assistants...")
+	response, err := client.GetUserAssistants(ctx)
 	if err != nil {
-		log.Fatalf("Error creating model: %v", err)
+		switch e := err.(type) {
+		case *aiyou.AuthenticationError:
+			log.Fatalf("Erreur d'authentification: %v", e)
+		case *aiyou.NetworkError:
+			log.Fatalf("Erreur réseau: %v", e)
+		case *aiyou.APIError:
+			log.Fatalf("Erreur API (code %d): %v", e.StatusCode, e)
+		default:
+			log.Fatalf("Erreur inattendue: %v", err)
+		}
 	}
-	fmt.Printf("Created model: %s (ID: %s)\n", model.Model.Name, model.Model.ID)
 
-	// Lister tous les modèles
-	models, err := client.GetModels(context.Background())
-	if err != nil {
-		log.Fatalf("Error getting models: %v", err)
-	}
-
-	fmt.Printf("\nTotal models: %d\n", models.Total)
-	for _, m := range models.Models {
-		fmt.Printf("\nModel: %s (%s)\n", m.Name, m.ID)
-		fmt.Printf("Description: %s\n", m.Description)
-		fmt.Printf("Version: %s\n", m.Version)
-		fmt.Printf("Capabilities: %v\n", m.Properties.Capabilities)
+	// Affichage des modèles
+	if response.TotalItems > 0 {
+		printModels(response)
+	} else {
+		fmt.Println("Aucun assistant trouvé. Impossible de déterminer les modèles disponibles.")
 	}
 }

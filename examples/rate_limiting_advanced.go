@@ -1,5 +1,3 @@
-// File: examples/rate_limiting_advanced.go
-
 /*
 Copyright (C) 2024 Cloud Temple
 
@@ -12,122 +10,245 @@ This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
-	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chrlesur/aiyou.golib"
+	"github.com/fatih/color"
 )
 
-func main() {
-	// Configuration du logger
-	logger := aiyou.NewDefaultLogger(os.Stdout)
-	logger.SetLevel(aiyou.DEBUG)
+var (
+	email        string
+	password     string
+	assistantID  string
+	baseURL      string
+	debug        bool
+	quietMode    bool
+	requestCount int
+	rateLimit    float64
+	burstSize    int
+	requestTypes string
 
-	// Configuration du client avec rate limiting
-	client, err := aiyou.NewClient(
-		"your-email@example.com",
-		"your-password",
+	// Statistiques atomiques
+	successCount   uint64
+	failureCount   uint64
+	rateLimitCount uint64
+
+	// Couleurs pour l'interface
+	successColor = color.New(color.FgGreen)
+	errorColor   = color.New(color.FgRed)
+	infoColor    = color.New(color.FgYellow)
+	headerColor  = color.New(color.FgCyan, color.Bold)
+)
+
+type RequestStats struct {
+	RequestType string
+	Duration    time.Duration
+	Error       error
+}
+
+func init() {
+	flag.StringVar(&email, "email", "", "Email pour l'authentification (obligatoire)")
+	flag.StringVar(&password, "password", "", "Mot de passe pour l'authentification (obligatoire)")
+	flag.StringVar(&assistantID, "assistant", "", "ID de l'assistant pour les tests de chat")
+	flag.StringVar(&baseURL, "url", "https://ai.dragonflygroup.fr", "URL de base de l'API")
+	flag.BoolVar(&debug, "debug", false, "Active les logs de debug")
+	flag.BoolVar(&quietMode, "quiet", false, "Désactive les messages de statut")
+	flag.IntVar(&requestCount, "requests", 10, "Nombre de requêtes à effectuer")
+	flag.Float64Var(&rateLimit, "rate", 2.0, "Nombre de requêtes par seconde")
+	flag.IntVar(&burstSize, "burst", 3, "Taille du burst initial")
+	flag.StringVar(&requestTypes, "types", "assistants", "Types de requêtes à tester (assistants, chat)")
+}
+
+func createClient() (*aiyou.Client, error) {
+	if email == "" || password == "" {
+		return nil, fmt.Errorf("email et mot de passe requis")
+	}
+
+	logger := aiyou.NewDefaultLogger(os.Stderr)
+	if debug {
+		logger.SetLevel(aiyou.DEBUG)
+	} else if quietMode {
+		logger.SetLevel(aiyou.ERROR)
+	} else {
+		logger.SetLevel(aiyou.INFO)
+	}
+
+	return aiyou.NewClient(
+		email,
+		password,
 		aiyou.WithLogger(logger),
+		aiyou.WithBaseURL(baseURL),
 		aiyou.WithRateLimiter(aiyou.RateLimiterConfig{
-			RequestsPerSecond: 2, // Limite à 2 requêtes par seconde
-			BurstSize:         3, // Permet un burst initial de 3 requêtes
+			RequestsPerSecond: rateLimit,
+			BurstSize:         burstSize,
 			WaitTimeout:       5 * time.Second,
 		}),
 	)
-	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-	}
-
-	// Démonstration de requêtes concurrentes avec rate limiting
-	demonstrateConcurrentRequests(client)
 }
 
-func demonstrateConcurrentRequests(client *aiyou.Client) {
-	fmt.Println("Starting concurrent requests demonstration...")
+func makeGenericRequest(ctx context.Context, client *aiyou.Client, reqType string, reqNum int) RequestStats {
+	start := time.Now()
+	var err error
+
+	switch reqType {
+	case "chat":
+		if assistantID == "" {
+			return RequestStats{
+				RequestType: reqType,
+				Duration:    0,
+				Error:       fmt.Errorf("assistant ID required for chat requests"),
+			}
+		}
+		msg := aiyou.NewTextMessage("user", "Test message for rate limiting")
+		_, err = client.CreateChatCompletion(ctx, []aiyou.Message{msg}, assistantID)
+
+	case "assistants":
+		response, err := client.GetUserAssistants(ctx)
+		if err == nil && !quietMode {
+			fmt.Fprintf(os.Stderr, "Récupéré %d assistants\n", len(response.Members))
+		}
+
+	default:
+		return RequestStats{
+			RequestType: reqType,
+			Duration:    0,
+			Error:       fmt.Errorf("type de requête inconnu: %s", reqType),
+		}
+	}
+
+	stats := RequestStats{
+		RequestType: reqType,
+		Duration:    time.Since(start),
+		Error:       err,
+	}
+
+	if err != nil {
+		atomic.AddUint64(&failureCount, 1)
+		if _, isRateLimit := err.(*aiyou.RateLimitError); isRateLimit {
+			atomic.AddUint64(&rateLimitCount, 1)
+		}
+	} else {
+		atomic.AddUint64(&successCount, 1)
+	}
+
+	return stats
+}
+
+func processRequestStats(stats RequestStats, reqNum int) {
+	if quietMode {
+		return
+	}
+
+	if stats.Error != nil {
+		if _, isRateLimit := stats.Error.(*aiyou.RateLimitError); isRateLimit {
+			errorColor.Fprintf(os.Stderr, "Requête %d (%s): Rate limit atteint\n",
+				reqNum, stats.RequestType)
+		} else {
+			errorColor.Fprintf(os.Stderr, "Requête %d (%s): %v\n",
+				reqNum, stats.RequestType, stats.Error)
+		}
+	} else {
+		successColor.Fprintf(os.Stderr, "Requête %d (%s): OK (%v)\n",
+			reqNum, stats.RequestType, stats.Duration.Round(time.Millisecond))
+	}
+}
+
+func printSummary(duration time.Duration) {
+	if quietMode {
+		return
+	}
+
+	headerColor.Fprintln(os.Stderr, "\nRésumé des tests:")
+	fmt.Fprintf(os.Stderr, "Durée totale: %v\n", duration)
+	fmt.Fprintf(os.Stderr, "Configuration:\n")
+	fmt.Fprintf(os.Stderr, "- Rate limit: %.1f req/s\n", rateLimit)
+	fmt.Fprintf(os.Stderr, "- Burst size: %d\n", burstSize)
+	fmt.Fprintf(os.Stderr, "- Requêtes totales: %d\n", requestCount)
+
+	fmt.Fprintf(os.Stderr, "\nRésultats:\n")
+	successes := atomic.LoadUint64(&successCount)
+	failures := atomic.LoadUint64(&failureCount)
+	rateLimits := atomic.LoadUint64(&rateLimitCount)
+
+	successColor.Fprintf(os.Stderr, "✓ Requêtes réussies: %d\n", successes)
+	errorColor.Fprintf(os.Stderr, "✗ Requêtes échouées: %d\n", failures)
+	fmt.Fprintf(os.Stderr, " - Erreurs de rate limit: %d\n", rateLimits)
+	fmt.Fprintf(os.Stderr, " - Autres erreurs: %d\n", failures-rateLimits)
+
+	if successes > 0 {
+		fmt.Fprintf(os.Stderr, "\nPerformances:\n")
+		fmt.Fprintf(os.Stderr, "- Taux effectif: %.2f req/s\n", float64(successes)/duration.Seconds())
+		fmt.Fprintf(os.Stderr, "- Taux de succès: %.1f%%\n", float64(successes)*100/float64(successes+failures))
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	if email == "" || password == "" {
+		fmt.Fprintln(os.Stderr, "Les paramètres email et password sont obligatoires")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	client, err := createClient()
+	if err != nil {
+		errorColor.Fprintf(os.Stderr, "Erreur lors de la création du client: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !quietMode {
+		headerColor.Fprintf(os.Stderr, "\nTest de rate limiting\n")
+		fmt.Fprintf(os.Stderr, "Type de requêtes: %s\n", requestTypes)
+	}
 
 	var wg sync.WaitGroup
-	requestCount := 10
-	results := make(chan string, requestCount)
+	results := make(chan RequestStats, requestCount)
+	start := time.Now()
 
-	// Lancer plusieurs requêtes concurrentes
+	// Calcul du délai entre les requêtes
+	delay := time.Second / time.Duration(rateLimit)
+	if delay < 50*time.Millisecond {
+		delay = 50 * time.Millisecond
+	}
+
+	// Lancement des requêtes
 	for i := 0; i < requestCount; i++ {
 		wg.Add(1)
-		go func(reqNum int) {
+		go func(num int) {
 			defer wg.Done()
+			stats := makeGenericRequest(context.Background(), client, requestTypes, num)
+			processRequestStats(stats, num)
+			results <- stats
+		}(i + 1)
 
-			ctx := context.Background()
-			start := time.Now()
-
-			// Simuler différents types de requêtes
-			var result string
-			switch reqNum % 3 {
-			case 0:
-				// Requête de chat
-				msg := aiyou.NewTextMessage("user", "Hello, how are you?")
-				resp, err := client.CreateChatCompletion(ctx, []aiyou.Message{msg}, "your-assistant-id")
-				if err != nil {
-					handleError(err, reqNum, results)
-					return
-				}
-				result = fmt.Sprintf("Chat request %d completed in %v", reqNum, time.Since(start))
-
-			case 1:
-				// Requête d'assistants
-				assistants, err := client.GetUserAssistants(ctx)
-				if err != nil {
-					handleError(err, reqNum, results)
-					return
-				}
-				result = fmt.Sprintf("Assistants request %d completed in %v, found %d assistants",
-					reqNum, time.Since(start), len(assistants.Assistants))
-
-			case 2:
-				// Requête de modèles
-				models, err := client.GetModels(ctx)
-				if err != nil {
-					handleError(err, reqNum, results)
-					return
-				}
-				result = fmt.Sprintf("Models request %d completed in %v, found %d models",
-					reqNum, time.Since(start), len(models.Models))
-			}
-
-			results <- result
-		}(i)
+		time.Sleep(delay)
 	}
 
-	// Goroutine pour collecter et afficher les résultats
+	// Attendre la fin des requêtes
 	go func() {
-		for result := range results {
-			fmt.Println(result)
-		}
+		wg.Wait()
+		close(results)
 	}()
 
-	// Attendre que toutes les requêtes soient terminées
-	wg.Wait()
-	close(results)
-
-	fmt.Println("All requests completed!")
-}
-
-func handleError(err error, reqNum int, results chan<- string) {
-	switch e := err.(type) {
-	case *aiyou.RateLimitError:
-		results <- fmt.Sprintf("Request %d: %v", reqNum, e)
-	case *aiyou.NetworkError:
-		results <- fmt.Sprintf("Request %d: Network error: %v", reqNum, e)
-	case *aiyou.AuthenticationError:
-		results <- fmt.Sprintf("Request %d: Authentication error: %v", reqNum, e)
-	default:
-		results <- fmt.Sprintf("Request %d: Unexpected error: %v", reqNum, err)
+	// Collecter les résultats
+	for range results {
+		// Les statistiques sont déjà traitées dans processRequestStats
 	}
+
+	printSummary(time.Since(start))
 }

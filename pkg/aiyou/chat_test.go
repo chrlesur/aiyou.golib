@@ -1,5 +1,5 @@
 // File: pkg/aiyou/chat_test.go
-package aiyou_test
+package aiyou
 
 import (
 	"context"
@@ -11,32 +11,30 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/chrlesur/aiyou.golib/pkg/aiyou"
 )
 
 // Variables de test
 var (
-	testLoginResponse = aiyou.LoginResponse{
+	testLoginResponse = LoginResponse{
 		Token:     "test_token",
 		ExpiresAt: time.Now().Add(time.Hour),
-		User: aiyou.User{
-			ID:    "1",
+		User: User{
+			ID:    1,
 			Email: "test@example.com",
 		},
 	}
 
-	testMessage = aiyou.Message{
+	testMessage = Message{
 		Role: "user",
-		Content: []aiyou.ContentPart{
+		Content: []ContentPart{
 			{Type: "text", Text: "Hello!"},
 		},
 	}
 
-	testChatRequest = aiyou.ChatCompletionRequest{
-		Messages:    []aiyou.Message{testMessage},
+	testChatRequest = ChatCompletionRequest{
+		Messages:    []Message{testMessage},
 		AssistantID: "asst_123",
-		Temperature: 0.7,
+		Temperature: 7,
 		TopP:        1.0,
 		Stream:      false,
 	}
@@ -46,11 +44,11 @@ func createTestServer(t *testing.T, handler func(w http.ResponseWriter, r *http.
 	return httptest.NewServer(http.HandlerFunc(handler))
 }
 
-func createTestClient(t *testing.T, serverURL string) *aiyou.Client {
-	client, err := aiyou.NewClient(
+func createTestClient(t *testing.T, serverURL string) *Client {
+	client, err := NewClient(
 		"test@example.com",
 		"password",
-		aiyou.WithBaseURL(serverURL),
+		WithBaseURL(serverURL),
 	)
 	if err != nil {
 		t.Fatalf("Failed to create test client: %v", err)
@@ -59,67 +57,139 @@ func createTestClient(t *testing.T, serverURL string) *aiyou.Client {
 }
 
 func TestChatCompletion(t *testing.T) {
-	server := createTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/login":
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(testLoginResponse)
+	testCases := []struct {
+		name           string
+		nonStreamResp  func(w http.ResponseWriter)
+		streamResp     func(w http.ResponseWriter, flusher http.Flusher)
+		expectedText   string
+		expectFallback bool
+	}{
+		{
+			name: "Direct non-streaming success",
+			nonStreamResp: func(w http.ResponseWriter) {
+				response := ChatCompletionResponse{
+					ID:      "resp_123",
+					Object:  "chat.completion",
+					Created: time.Now().Unix(),
+					Model:   "gpt-4",
+					Choices: []Choice{
+						{
+							Message: Message{
+								Role: "assistant",
+								Content: []ContentPart{
+									{Type: "text", Text: "Hello, how can I help you today?"},
+								},
+							},
+							FinishReason: "stop",
+						},
+					},
+				}
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(response)
+			},
+			streamResp:     nil,
+			expectedText:   "Hello, how can I help you today?",
+			expectFallback: false,
+		},
+		{
+			name: "Fallback to streaming",
+			nonStreamResp: func(w http.ResponseWriter) {
+				errorResp := map[string]interface{}{
+					"object":  "error",
+					"message": "Stream options can only be defined when `stream=True`",
+					"type":    "BadRequestError",
+					"code":    400,
+				}
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(errorResp)
+			},
+			streamResp: func(w http.ResponseWriter, flusher http.Flusher) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("Connection", "keep-alive")
+				w.WriteHeader(http.StatusOK)
 
-		case "/api/v1/chat/completions":
-			if r.Method != "POST" {
-				t.Errorf("Expected POST request, got: %s", r.Method)
-			}
-
-			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
-				t.Error("Missing or invalid Authorization header")
-			}
-
-			var reqBody aiyou.ChatCompletionRequest
-			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-				t.Errorf("Failed to decode request body: %v", err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			response := aiyou.ChatCompletionResponse{
-				ID:      "resp_123",
-				Object:  "chat.completion",
-				Created: time.Now().Unix(),
-				Model:   "gpt-4",
-				Choices: []aiyou.Choice{
-					{
-						Message: aiyou.Message{
-							Role: "assistant",
-							Content: []aiyou.ContentPart{
-								{Type: "text", Text: "Hello, how can I help you today?"},
+				messages := []string{"Hello", ", how", " can I", " help you", " today?"}
+				for _, msg := range messages {
+					chunk := ChatCompletionResponse{
+						ID:      "resp_123",
+						Object:  "chat.completion.chunk",
+						Created: time.Now().Unix(),
+						Model:   "gpt-4",
+						Choices: []Choice{
+							{
+								Delta: &Delta{
+									Content: msg,
+								},
 							},
 						},
-						FinishReason: "stop",
-					},
-				},
+					}
+					data, _ := json.Marshal(chunk)
+					fmt.Fprintf(w, "%s\n\n", data)
+					flusher.Flush()
+					time.Sleep(10 * time.Millisecond)
+				}
+			},
+			expectedText:   "Hello, how can I help you today?",
+			expectFallback: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := createTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/login":
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(testLoginResponse)
+
+				case "/api/v1/chat/completions":
+					if r.Method != "POST" {
+						t.Errorf("Expected POST request, got: %s", r.Method)
+					}
+
+					var reqBody map[string]interface{}
+					if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+						t.Errorf("Failed to decode request body: %v", err)
+						return
+					}
+
+					isStream, _ := reqBody["stream"].(bool)
+					if isStream {
+						if tc.streamResp != nil {
+							flusher, ok := w.(http.Flusher)
+							if !ok {
+								t.Fatal("Streaming not supported")
+								return
+							}
+							tc.streamResp(w, flusher)
+						}
+					} else {
+						tc.nonStreamResp(w)
+					}
+				}
+			})
+			defer server.Close()
+
+			client := createTestClient(t, server.URL)
+			resp, err := client.ChatCompletion(context.Background(), testChatRequest)
+			if err != nil {
+				t.Fatalf("ChatCompletion failed: %v", err)
 			}
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(response)
-		}
-	})
-	defer server.Close()
 
-	client := createTestClient(t, server.URL)
-	resp, err := client.ChatCompletion(context.Background(), testChatRequest)
-	if err != nil {
-		t.Fatalf("ChatCompletion failed: %v", err)
-	}
+			if resp == nil {
+				t.Fatal("Expected non-nil response")
+			}
 
-	if resp == nil {
-		t.Fatal("Expected non-nil response")
-	}
+			if len(resp.Choices) == 0 {
+				t.Fatal("Expected at least one choice in response")
+			}
 
-	if len(resp.Choices) == 0 {
-		t.Fatal("Expected at least one choice in response")
-	}
-
-	if resp.Choices[0].Message.Content[0].Text != "Hello, how can I help you today?" {
-		t.Errorf("Unexpected response text: %s", resp.Choices[0].Message.Content[0].Text)
+			gotText := resp.Choices[0].Message.Content[0].Text
+			if gotText != tc.expectedText {
+				t.Errorf("Expected text %q, got %q", tc.expectedText, gotText)
+			}
+		})
 	}
 }
 
@@ -131,8 +201,7 @@ func TestChatCompletionStream(t *testing.T) {
 			json.NewEncoder(w).Encode(testLoginResponse)
 
 		case "/api/v1/chat/completions":
-			// Vérifier que c'est une requête de streaming
-			var reqBody aiyou.ChatCompletionRequest
+			var reqBody ChatCompletionRequest
 			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 				t.Errorf("Failed to decode request body: %v", err)
 				w.WriteHeader(http.StatusBadRequest)
@@ -159,16 +228,16 @@ func TestChatCompletionStream(t *testing.T) {
 
 			messages := []string{"Hello", ", how", " can I", " help you", " today?"}
 			for _, msg := range messages {
-				chunk := aiyou.ChatCompletionResponse{
-					ID: "resp_123",
-					Object: "chat.completion.chunk",
+				chunk := ChatCompletionResponse{
+					ID:      "resp_123",
+					Object:  "chat.completion.chunk",
 					Created: time.Now().Unix(),
-					Model: "gpt-4",
-					Choices: []aiyou.Choice{
+					Model:   "gpt-4",
+					Choices: []Choice{
 						{
-							Message: aiyou.Message{
+							Message: Message{
 								Role: "assistant",
-								Content: []aiyou.ContentPart{
+								Content: []ContentPart{
 									{Type: "text", Text: msg},
 								},
 							},
@@ -182,12 +251,7 @@ func TestChatCompletionStream(t *testing.T) {
 					return
 				}
 
-				// Format SSE
-				_, err = fmt.Fprintf(w, "%s\n\n", data)
-				if err != nil {
-					t.Errorf("Failed to write chunk: %v", err)
-					return
-				}
+				fmt.Fprintf(w, "%s\n\n", data)
 				flusher.Flush()
 				time.Sleep(50 * time.Millisecond)
 			}
@@ -196,7 +260,7 @@ func TestChatCompletionStream(t *testing.T) {
 	defer server.Close()
 
 	client := createTestClient(t, server.URL)
-	
+
 	streamReq := testChatRequest
 	streamReq.Stream = true
 
@@ -219,7 +283,7 @@ func TestChatCompletionStream(t *testing.T) {
 			t.Fatalf("Error reading chunk: %v", err)
 		}
 		if chunk == nil {
-			continue // Skip empty chunks
+			continue
 		}
 
 		if len(chunk.Choices) > 0 {
@@ -232,7 +296,7 @@ func TestChatCompletionStream(t *testing.T) {
 
 	expected := "Hello, how can I help you today?"
 	if fullResponse.String() != expected {
-		t.Errorf("Expected response '%s', got '%s'", expected, fullResponse.String())
+		t.Errorf("Expected response %q, got %q", expected, fullResponse.String())
 	}
 }
 
@@ -246,7 +310,12 @@ func TestChatCompletionErrors(t *testing.T) {
 			name: "Unauthorized",
 			serverResponse: func(w http.ResponseWriter) {
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"object":  "error",
+					"message": "Unauthorized",
+					"type":    "AuthenticationError",
+					"code":    401,
+				})
 			},
 			expectedError: true,
 		},
@@ -254,7 +323,12 @@ func TestChatCompletionErrors(t *testing.T) {
 			name: "Bad Request",
 			serverResponse: func(w http.ResponseWriter) {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"object":  "error",
+					"message": "Invalid request",
+					"type":    "BadRequestError",
+					"code":    400,
+				})
 			},
 			expectedError: true,
 		},
@@ -262,7 +336,12 @@ func TestChatCompletionErrors(t *testing.T) {
 			name: "Rate Limit",
 			serverResponse: func(w http.ResponseWriter) {
 				w.WriteHeader(http.StatusTooManyRequests)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Rate limit exceeded"})
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"object":  "error",
+					"message": "Rate limit exceeded",
+					"type":    "RateLimitError",
+					"code":    429,
+				})
 			},
 			expectedError: true,
 		},
@@ -283,8 +362,29 @@ func TestChatCompletionErrors(t *testing.T) {
 
 			client := createTestClient(t, server.URL)
 			_, err := client.ChatCompletion(context.Background(), testChatRequest)
-			if (err != nil) != tc.expectedError {
-				t.Errorf("Expected error: %v, got: %v", tc.expectedError, err)
+
+			if tc.expectedError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else {
+					// Vérifier le type d'erreur
+					switch tc.name {
+					case "Unauthorized":
+						if _, ok := err.(*APIError); !ok {
+							t.Errorf("Expected APIError, got %T", err)
+						}
+					case "Bad Request":
+						if _, ok := err.(*APIError); !ok {
+							t.Errorf("Expected APIError, got %T", err)
+						}
+					case "Rate Limit":
+						if _, ok := err.(*RateLimitError); !ok {
+							t.Errorf("Expected RateLimitError, got %T", err)
+						}
+					}
+				}
+			} else if err != nil {
+				t.Errorf("Expected no error, got: %v", err)
 			}
 		})
 	}

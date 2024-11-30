@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"bytes"
 )
 
 // Formats audio supportés
@@ -40,91 +39,131 @@ var SupportedFormats = []SupportedAudioFormat{
 // TranscribeAudioFile transcrit un fichier audio en texte
 func (c *Client) TranscribeAudioFile(ctx context.Context, filePath string, opts *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
 	c.logger.Debugf("Starting audio transcription for file: %s", filePath)
-   
-	// Vérifier l'existence du fichier
+
+	// Ouvrir et vérifier le fichier
 	file, err := os.Open(filePath)
 	if err != nil {
-	c.logger.Errorf("Failed to open audio file: %v", err)
-	return nil, fmt.Errorf("failed to open audio file: %w", err)
+		c.logger.Errorf("Failed to open audio file: %v", err)
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
 	}
 	defer file.Close()
-   
-	// Vérifier le format et la taille du fichier
-	if err := validateAudioFile(file, filePath); err != nil {
-	c.logger.Errorf("Invalid audio file: %v", err)
-	return nil, err
-	}
-   
-	// Retourner au début du fichier après validation
-	if _, err := file.Seek(0, 0); err != nil {
-	return nil, fmt.Errorf("failed to reset file position: %w", err)
-	}
-   
-	// Créer un buffer pour construire la requête multipart
-	var requestBody bytes.Buffer
-	writer := multipart.NewWriter(&requestBody)
-   
-	// Ajouter les options de transcription
-	if opts != nil {
-	optionsJson, err := json.Marshal(opts)
-	if err == nil {
-	if err := writer.WriteField("options", string(optionsJson)); err != nil {
-	return nil, fmt.Errorf("failed to write options field: %w", err)
-	}
-	}
-	}
-   
-	// Ajouter le fichier audio
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+
+	fileInfo, err := file.Stat()
 	if err != nil {
-	return nil, fmt.Errorf("failed to create form file: %w", err)
+		c.logger.Errorf("Failed to get file info: %v", err)
+		return nil, fmt.Errorf("failed to get file info: %w", err)
 	}
-   
-	if _, err := io.Copy(part, file); err != nil {
-	return nil, fmt.Errorf("failed to copy file content: %w", err)
-	}
-   
-	// Fermer le writer multipart
-	if err := writer.Close(); err != nil {
-	return nil, fmt.Errorf("failed to close multipart writer: %w", err)
-	}
-   
-	// Créer la requête HTTP
+
+	// Créer un pipe pour lire le body
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	// Goroutine pour écrire le multipart form
+	go func() {
+		defer pw.Close()
+		var writeError error
+
+		// Créer la partie fichier
+		part, err := writer.CreateFormFile("audioFile", filepath.Base(filePath))
+		if err != nil {
+			writeError = err
+			pw.CloseWithError(err)
+			return
+		}
+
+		// Copier le fichier
+		_, err = io.Copy(part, file)
+		if err != nil {
+			writeError = err
+			pw.CloseWithError(err)
+			return
+		}
+
+		// Ajouter les champs optionnels
+		if opts != nil {
+			if opts.Language != "" {
+				if err := writer.WriteField("language", opts.Language); err != nil {
+					writeError = err
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if opts.Format != "" {
+				if err := writer.WriteField("format", opts.Format); err != nil {
+					writeError = err
+					pw.CloseWithError(err)
+					return
+				}
+			}
+		}
+
+		// Fermer le writer
+		if err := writer.Close(); err != nil {
+			writeError = err
+			pw.CloseWithError(err)
+			return
+		}
+
+		if writeError != nil {
+			c.logger.Errorf("Error writing multipart form: %v", writeError)
+		}
+	}()
+
+	// Créer la requête
 	endpoint := "/api/v1/audio/transcriptions"
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, &requestBody)
+	c.logger.Debugf("Creating request to %s with file size: %d bytes", endpoint, fileInfo.Size())
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, pr)
 	if err != nil {
-	return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-   
-	// Définir le Content-Type avec la boundary
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-   
-	// Ajouter le token d'authentification
+
+	// Authentification
 	if err := c.auth.Authenticate(ctx); err != nil {
-	return nil, fmt.Errorf("failed to authenticate: %w", err)
+		return nil, fmt.Errorf("failed to authenticate: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.auth.Token())
-   
+
+	// Content-Type
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Log des headers
+	c.logger.Debugf("Request headers:")
+	for name, values := range req.Header {
+		c.logger.Debugf(" %s: %v", name, values)
+	}
+
 	// Envoyer la requête
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-	return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
-   
-	if resp.StatusCode != http.StatusOK {
-	return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+
+	// Lire le corps de la réponse
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-   
+
+	if resp.StatusCode != http.StatusOK {
+		c.logger.Errorf("Transcription failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("transcription failed: %s", string(body)),
+		}
+	}
+
 	// Décoder la réponse
 	var transcription AudioTranscriptionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&transcription); err != nil {
-	return nil, fmt.Errorf("failed to decode transcription response: %w", err)
+	if err := json.Unmarshal(body, &transcription); err != nil {
+		c.logger.Errorf("Failed to decode response: %v. Body: %s", err, string(body))
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-   
-	c.logger.Infof("Successfully transcribed audio file: %s", filePath)
+
+	c.logger.Debugf("Successfully transcribed audio file: %s", filePath)
 	return &transcription, nil
-   }
+}
 
 // validateAudioFile vérifie si le fichier audio est dans un format supporté
 func validateAudioFile(file *os.File, filePath string) error {

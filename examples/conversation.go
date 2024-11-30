@@ -15,12 +15,12 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-// File: examples/conversation.go
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -29,24 +29,54 @@ import (
 	"github.com/chrlesur/aiyou.golib"
 )
 
-const maxRetries = 3
-const retryDelay = 5 * time.Second
+const (
+	timeoutDuration = 30 * time.Second
+	retryDelay      = 5 * time.Second
+)
+
+func printMessage(msg aiyou.Message, indent string) {
+	fmt.Printf("%sRole: %s\n", indent, msg.Role)
+	for _, content := range msg.Content {
+		fmt.Printf("%sContenu (%s): %s\n", indent, content.Type, content.Text)
+	}
+}
 
 func main() {
-	// Créer un client avec plus de logs
-	logger := aiyou.NewDefaultLogger(os.Stdout)
-	logger.SetLevel(aiyou.DEBUG)
+	// Définition des flags
+	email := flag.String("email", "", "Email pour l'authentification (obligatoire)")
+	password := flag.String("password", "", "Mot de passe pour l'authentification (obligatoire)")
+	assistantID := flag.String("assistant", "", "ID de l'assistant (obligatoire)")
+	debug := flag.Bool("debug", false, "Active les logs de debug")
+	baseURL := flag.String("url", "https://ai.dragonflygroup.fr", "URL de base de l'API")
+	flag.Parse()
 
-	client, err := aiyou.NewClient(
-		"christophe.lesur@cloud-temple.com",
-		"XXXXXX",
-		aiyou.WithLogger(logger),
-	)
-	if err != nil {
-		log.Fatalf("Error creating client: %v", err)
+	// Vérification des paramètres obligatoires
+	if *email == "" || *password == "" || *assistantID == "" {
+		fmt.Println("Les paramètres email, password et assistant sont obligatoires")
+		flag.Usage()
+		os.Exit(1)
 	}
 
-	// Préparer les messages
+	// Configuration du logger
+	logger := aiyou.NewDefaultLogger(os.Stdout)
+	if *debug {
+		logger.SetLevel(aiyou.DEBUG)
+	} else {
+		logger.SetLevel(aiyou.INFO)
+	}
+
+	// Création du client
+	client, err := aiyou.NewClient(
+		*email,
+		*password,
+		aiyou.WithLogger(logger),
+		aiyou.WithBaseURL(*baseURL),
+	)
+	if err != nil {
+		log.Fatalf("Erreur lors de la création du client: %v", err)
+	}
+
+	// Préparation des messages de test
 	messages := []aiyou.Message{
 		{
 			Role: "user",
@@ -62,15 +92,15 @@ func main() {
 		},
 	}
 
-	// Créer le JSON de conversation
+	// Création du JSON de conversation
 	messagesJSON, err := json.Marshal(messages)
 	if err != nil {
 		log.Fatalf("Erreur lors de la sérialisation des messages: %v", err)
 	}
 
-	// Créer une conversation à sauvegarder
+	// Création de la requête de sauvegarde
 	conversation := aiyou.SaveConversationRequest{
-		AssistantID:    "asst_VZAhLX1aPVnVQPXCtvsdAgg4",
+		AssistantID:    *assistantID,
 		Conversation:   "Test de conversation",
 		FirstMessage:   messages[0].Content[0].Text,
 		ContentJson:    string(messagesJSON),
@@ -78,73 +108,84 @@ func main() {
 		IsNewAppThread: true,
 	}
 
-	// Sauvegarder la conversation
+	// Context avec timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
+	defer cancel()
+
+	// Sauvegarde de la conversation
 	fmt.Println("Sauvegarde de la conversation...")
-	resp, err := client.SaveConversation(context.Background(), conversation)
+	_, err = client.SaveConversation(ctx, conversation)
 	if err != nil {
-		log.Printf("Erreur lors de la sauvegarde: %v", err)
-		return
+		switch e := err.(type) {
+		case *aiyou.AuthenticationError:
+			log.Fatalf("Erreur d'authentification: %v", e)
+		case *aiyou.NetworkError:
+			log.Fatalf("Erreur réseau: %v", e)
+		case *aiyou.APIError:
+			log.Fatalf("Erreur API (code %d): %v", e.StatusCode, e)
+		default:
+			log.Fatalf("Erreur inattendue: %v", err)
+		}
 	}
 
-	fmt.Printf("\nConversation sauvegardée avec succès !\n")
-	fmt.Printf("Thread ID: %s\n", resp.ID)
-	fmt.Printf("Created at: %s\n", time.Unix(resp.CreatedAt, 0))
+	fmt.Printf("\nConversation sauvegardée, recherche du thread...\n")
 
-	// Attente initiale pour la propagation
-	fmt.Printf("\nAttente de 5 secondes pour la propagation...\n")
-	time.Sleep(5 * time.Second)
+	// Attente pour la propagation
+	fmt.Printf("Attente de %s pour la propagation...\n", retryDelay)
+	time.Sleep(retryDelay)
 
-	// Récupérer la conversation avec retry
+	// Récupération de la liste des threads
+	threadsOutput, err := client.GetUserThreads(ctx, &aiyou.UserThreadsParams{
+		Page:         1,
+		ItemsPerPage: 10,
+	})
+	if err != nil {
+		log.Fatalf("Erreur lors de la récupération des threads: %v", err)
+	}
+
+	// Recherche du thread le plus récent correspondant
 	var thread *aiyou.ConversationThread
-	var lastError error
-
-	for i := 0; i < maxRetries; i++ {
-		fmt.Printf("\nTentative %d/%d de récupération de la conversation...\n", i+1, maxRetries)
-
-		thread, err = client.GetConversation(context.Background(), resp.ID)
-		if err == nil {
+	for _, t := range threadsOutput.Threads {
+		if t.Content == conversation.Conversation &&
+			t.AssistantIdOpenAi == conversation.AssistantID &&
+			t.FirstMessage == conversation.FirstMessage {
+			thread = &t
 			break
 		}
-
-		lastError = err
-		if i < maxRetries-1 {
-			fmt.Printf("Erreur: %v\n", err)
-			fmt.Printf("Attente de %v avant nouvelle tentative...\n", retryDelay)
-			time.Sleep(retryDelay)
-		}
 	}
 
-	if lastError != nil {
-		log.Printf("Échec de la récupération après %d tentatives: %v", maxRetries, lastError)
-		return
+	if thread == nil {
+		log.Fatalf("Thread nouvellement créé non trouvé")
 	}
 
-	// Afficher les détails de la conversation
+	// Affichage des détails de la conversation
 	fmt.Printf("\nConversation récupérée :\n")
 	fmt.Printf("Thread ID: %s\n", thread.ID)
-	fmt.Printf("Title: %s\n", thread.Title)
-	fmt.Printf("Assistant ID: %s\n", thread.AssistantID)
-	if thread.CreatedAt.IsZero() {
-		fmt.Println("Created at: Non disponible")
-	} else {
-		fmt.Printf("Created at: %s\n", thread.CreatedAt.Format(time.RFC3339))
+	fmt.Printf("Thread Param ID: %d\n", thread.ThreadIdParam)
+	fmt.Printf("Contenu: %s\n", thread.Content)
+	fmt.Printf("Assistant Name: %s\n", thread.AssistantName)
+	if thread.AssistantModel != nil {
+		fmt.Printf("Assistant Model: %s\n", *thread.AssistantModel)
 	}
-	if thread.LastMessageAt.IsZero() {
-		fmt.Println("Last message at: Non disponible")
-	} else {
-		fmt.Printf("Last message at: %s\n", thread.LastMessageAt.Format(time.RFC3339))
-	}
+	fmt.Printf("Assistant ID: %d\n", thread.AssistantId)
+	fmt.Printf("Assistant OpenAI ID: %s\n", thread.AssistantIdOpenAi)
+	fmt.Printf("Created at: %s\n", thread.CreatedAt.Format(time.RFC3339))
+	fmt.Printf("Updated at: %s\n", thread.UpdatedAt.Format(time.RFC3339))
+	fmt.Printf("Is New App Thread: %v\n", thread.IsNewAppThread)
 
-	// Afficher les messages
-	if len(thread.Messages) == 0 {
-		fmt.Println("\nAucun message dans la conversation")
-	} else {
-		for i, msg := range thread.Messages {
-			fmt.Printf("\nMessage %d:\n", i+1)
-			fmt.Printf("Role: %s\n", msg.Role)
-			for _, content := range msg.Content {
-				fmt.Printf("Content (%s): %s\n", content.Type, content.Text)
+	// Affichage des messages
+	if thread.AssistantContentJson != "" {
+		var messages []aiyou.Message
+		if err := json.Unmarshal([]byte(thread.AssistantContentJson), &messages); err != nil {
+			fmt.Printf("\nErreur lors du décodage des messages: %v\n", err)
+		} else {
+			fmt.Printf("\nMessages (%d):\n", len(messages))
+			for i, msg := range messages {
+				fmt.Printf("\nMessage %d:\n", i+1)
+				printMessage(msg, " ")
 			}
 		}
+	} else {
+		fmt.Println("\nAucun message dans la conversation")
 	}
 }

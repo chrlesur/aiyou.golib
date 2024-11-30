@@ -10,6 +10,7 @@ import (
 )
 
 // Réexportation des types publics
+// Réexportation des types publics
 type (
 	// Client et options
 	Client            = internal.Client
@@ -24,8 +25,9 @@ type (
 	Logger        = internal.Logger
 
 	// Structures de messages et contenus
-	Message     = internal.Message
-	ContentPart = internal.ContentPart
+	Message       = internal.Message
+	ContentPart   = internal.ContentPart
+	StreamOptions = internal.StreamOptions
 
 	// Structures d'authentification
 	LoginRequest  = internal.LoginRequest
@@ -37,10 +39,12 @@ type (
 	ChatCompletionResponse = internal.ChatCompletionResponse
 	Usage                  = internal.Usage
 	Choice                 = internal.Choice
+	Delta                  = internal.Delta
 
 	// Structures des assistants
-	Assistant     = internal.Assistant
-	ThreadHistory = internal.ThreadHistory
+	Assistant          = internal.Assistant
+	ThreadHistory      = internal.ThreadHistory
+	AssistantsResponse = internal.AssistantsResponse
 
 	// Structures des modèles
 	Model           = internal.Model
@@ -142,7 +146,7 @@ type ClientInterface interface {
 	CreateChatCompletionStream(ctx context.Context, messages []Message, assistantID string) (*StreamReader, error)
 	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error)
 	ChatCompletionStream(ctx context.Context, req ChatCompletionRequest) (*StreamReader, error)
-	GetUserAssistants(ctx context.Context) ([]Assistant, error)
+	GetUserAssistants(ctx context.Context) (*AssistantsResponse, error)
 	TranscribeAudioFile(ctx context.Context, filePath string, opts *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error)
 	SaveConversation(ctx context.Context, req SaveConversationRequest) (*SaveConversationResponse, error)
 	GetConversation(ctx context.Context, threadID string) (*ConversationThread, error)
