@@ -6,7 +6,7 @@ aiyou.golib est un package Go pour interagir avec l'API AI.YOU de Cloud Temple.
 
 Pour installer aiyou.golib, utilisez la commande suivante :
 
-go get github.com/chrlesur/aiyou.golib
+    go get github.com/chrlesur/aiyou.golib
 
 ## Structure du Package
 
