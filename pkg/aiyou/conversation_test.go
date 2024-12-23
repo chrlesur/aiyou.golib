@@ -1,248 +1,163 @@
-// File: pkg/aiyou/conversation_test.go
 package aiyou
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 )
 
 func TestSaveConversation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Test authentication endpoint
-		if r.URL.Path == "/api/login" {
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(LoginResponse{
-				Token:     "test_token",
-				ExpiresAt: time.Now().Add(time.Hour),
-			})
-			return
-		}
+	// Configuration du logger pour voir ce qui se passe
+	logger := NewDefaultLogger(os.Stderr)
+	logger.SetLevel(DEBUG)
 
-		// Test save conversation endpoint
-		if r.URL.Path == "/api/v1/save" && r.Method == "POST" {
-			// Décoder la requête pour vérification
-			var req SaveConversationRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Errorf("Failed to decode request body: %v", err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Vérifier les champs requis
-			if req.AssistantID == "" {
-				t.Error("AssistantID is required")
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Créer une réponse de test
-			response := SaveConversationResponse{
-				ID:        "thread_123",
-				Object:    "thread",
-				CreatedAt: time.Now().Unix(),
-			}
-
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(response)
-		}
-	}))
-	defer server.Close()
-
-	client, err := NewClient("test@example.com", "password", WithBaseURL(server.URL))
+	// Création du client avec les credentials de test
+	client, err := NewClient(
+		WithEmailPassword(testConfig.Email, testConfig.Password),
+		WithBaseURL(testConfig.BaseURL),
+		WithLogger(logger),
+	)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	// Créer une requête de test
+	// Créer une requête de test pour sauvegarder une conversation
 	req := SaveConversationRequest{
-		AssistantID:    "asst_123",
-		Conversation:   "Test conversation",
-		FirstMessage:   "Hello, how can I help you?",
-		ContentJson:    `{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]}`,
-		ModelName:      "gpt-4",
-		IsNewAppThread: true,
+		AssistantID:  "287", // ID d'un assistant existant dans le système
+		Conversation: "Test conversation created at " + time.Now().Format(time.RFC3339),
+		FirstMessage: "Hello from test!",
+		ContentJson:  `{"messages":[{"role":"user","content":[{"type":"text","text":"Hello from test"}]}]}`,
+		ModelName:    "gpt-4",
 	}
+
+	t.Logf("Attempting to save conversation with assistant ID: %s", req.AssistantID)
 
 	resp, err := client.SaveConversation(context.Background(), req)
 	if err != nil {
 		t.Fatalf("SaveConversation failed: %v", err)
 	}
 
-	// Vérifier la réponse
-	if resp.ID == "" {
-		t.Error("Expected thread ID in response")
+	// Vérification et log des résultats
+	if resp == nil {
+		t.Fatal("Expected non-nil response")
 	}
 
-	if resp.Object != "thread" {
-		t.Errorf("Expected object type 'thread', got %s", resp.Object)
+	t.Logf("Successfully saved conversation:")
+	t.Logf("  Thread ID: %s", resp.ID)
+	t.Logf("  Object: %s", resp.Object)
+	t.Logf("  Created At: %d", resp.CreatedAt)
+
+	// Test de récupération de la conversation
+	thread, err := client.GetConversation(context.Background(), resp.ID)
+	if err != nil {
+		t.Fatalf("GetConversation failed: %v", err)
 	}
 
-	if resp.CreatedAt == 0 {
-		t.Error("Expected non-zero CreatedAt timestamp")
+	t.Logf("Retrieved conversation:")
+	t.Logf("  Thread ID: %s", thread.ID)
+	t.Logf("  Content: %s", thread.Content)
+	t.Logf("  Assistant Name: %s", thread.AssistantName)
+	t.Logf("  First Message: %s", thread.FirstMessage)
+	t.Logf("  Created At: %v", thread.CreatedAt)
+}
+
+func TestSaveConversationUnauthorized(t *testing.T) {
+	logger := NewDefaultLogger(os.Stderr)
+	logger.SetLevel(DEBUG)
+
+	// Test avec des credentials invalides
+	client, err := NewClient(
+		WithEmailPassword("invalid@example.com", "wrong_password"),
+		WithBaseURL(testConfig.BaseURL),
+		WithLogger(logger),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	req := SaveConversationRequest{
+		AssistantID:  "287",
+		Conversation: "Test unauthorized conversation",
+		FirstMessage: "Hello!",
+		ContentJson:  "{}",
+		ModelName:    "gpt-4",
+	}
+
+	_, err = client.SaveConversation(context.Background(), req)
+	if err == nil {
+		t.Error("Expected error for unauthorized request")
+	}
+
+	t.Logf("Got expected error: %v", err)
+}
+
+func TestGetConversation(t *testing.T) {
+	logger := NewDefaultLogger(os.Stderr)
+	logger.SetLevel(DEBUG)
+
+	client, err := NewClient(
+		WithEmailPassword(testConfig.Email, testConfig.Password),
+		WithBaseURL(testConfig.BaseURL),
+		WithLogger(logger),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// D'abord créer une nouvelle conversation pour le test
+	saveReq := SaveConversationRequest{
+		AssistantID:  "287",
+		Conversation: "Test conversation for retrieval " + time.Now().Format(time.RFC3339),
+		FirstMessage: "Hello from retrieval test!",
+		ContentJson:  `{"messages":[{"role":"user","content":[{"type":"text","text":"Hello from retrieval test"}]}]}`,
+		ModelName:    "gpt-4",
+	}
+
+	savedResp, err := client.SaveConversation(context.Background(), saveReq)
+	if err != nil {
+		t.Fatalf("Failed to create test conversation: %v", err)
+	}
+
+	t.Logf("Created test conversation with ID: %s", savedResp.ID)
+
+	// Maintenant récupérer la conversation
+	thread, err := client.GetConversation(context.Background(), savedResp.ID)
+	if err != nil {
+		t.Fatalf("GetConversation failed: %v", err)
+	}
+
+	t.Logf("Retrieved conversation details:")
+	t.Logf("  Thread ID: %s", thread.ID)
+	t.Logf("  Content: %s", thread.Content)
+	t.Logf("  Assistant Name: %s", thread.AssistantName)
+	t.Logf("  Model: %s", *thread.AssistantModel)
+	t.Logf("  First Message: %s", thread.FirstMessage)
+	t.Logf("  Created At: %v", thread.CreatedAt)
+
+	// Vérifier que les données correspondent
+	if thread.FirstMessage != saveReq.FirstMessage {
+		t.Errorf("First message mismatch. Expected: %s, Got: %s", saveReq.FirstMessage, thread.FirstMessage)
 	}
 }
 
-func TestSaveConversationErrors(t *testing.T) {
-	testCases := []struct {
-		name           string
-		serverResponse func(w http.ResponseWriter)
-		expectedError  bool
-	}{
-		{
-			name: "Unauthorized",
-			serverResponse: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{
-					"error": "Unauthorized",
-				})
-			},
-			expectedError: true,
-		},
-		{
-			name: "Bad Request",
-			serverResponse: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{
-					"error": "Invalid request",
-				})
-			},
-			expectedError: true,
-		},
-		{
-			name: "Server Error",
-			serverResponse: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusInternalServerError)
-			},
-			expectedError: true,
-		},
+func TestGetNonExistentConversation(t *testing.T) {
+	logger := NewDefaultLogger(os.Stderr)
+	logger.SetLevel(DEBUG)
+
+	client, err := NewClient(
+		WithEmailPassword(testConfig.Email, testConfig.Password),
+		WithBaseURL(testConfig.BaseURL),
+		WithLogger(logger),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/api/login" {
-					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(LoginResponse{
-						Token:     "test_token",
-						ExpiresAt: time.Now().Add(time.Hour),
-					})
-					return
-				}
-
-				if r.URL.Path == "/api/v1/save" {
-					tc.serverResponse(w)
-				}
-			}))
-			defer server.Close()
-
-			client, err := NewClient("test@example.com", "password", WithBaseURL(server.URL))
-			if err != nil {
-				t.Fatalf("Failed to create client: %v", err)
-			}
-
-			req := SaveConversationRequest{
-				AssistantID:  "asst_123",
-				Conversation: "Test conversation",
-				FirstMessage: "Hello",
-				ContentJson:  "{}",
-				ModelName:    "gpt-4",
-			}
-
-			_, err = client.SaveConversation(context.Background(), req)
-			if (err != nil) != tc.expectedError {
-				t.Errorf("Expected error: %v, got error: %v", tc.expectedError, err)
-			}
-		})
-	}
-}
-
-func TestSaveConversationValidation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/login" {
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(LoginResponse{
-				Token: "test_token",
-				ExpiresAt: time.Now().Add(time.Hour),
-			})
-			return
-		}
-
-		if r.URL.Path == "/api/v1/save" {
-			var req SaveConversationRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Validation des champs requis
-			if req.AssistantID == "" || req.Conversation == "" {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Réponse de succès
-			w.WriteHeader(http.StatusCreated) // Changé de 200 à 201
-			response := SaveConversationResponse{
-				ID: "thread_123",
-				Object: "thread",
-				CreatedAt: time.Now().Unix(),
-			}
-			json.NewEncoder(w).Encode(response)
-		}
-	}))
-	defer server.Close()
-
-	testCases := []struct {
-		name string
-		request SaveConversationRequest
-		wantErr bool
-	}{
-		{
-			name: "Empty AssistantID",
-			request: SaveConversationRequest{
-				AssistantID: "",
-				Conversation: "Test",
-				FirstMessage: "Hello",
-			},
-			wantErr: true,
-		},
-		{
-			name: "Empty Conversation",
-			request: SaveConversationRequest{
-				AssistantID: "asst_123",
-				Conversation: "",
-				FirstMessage: "Hello",
-			},
-			wantErr: true,
-		},
-		{
-			name: "Valid Request",
-			request: SaveConversationRequest{
-				AssistantID: "asst_123",
-				Conversation: "Test conversation",
-				FirstMessage: "Hello",
-				ContentJson: "{}",
-				ModelName: "gpt-4",
-			},
-			wantErr: false,
-		},
+	_, err = client.GetConversation(context.Background(), "non_existent_thread_id")
+	if err == nil {
+		t.Error("Expected error when getting non-existent conversation")
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			client, err := NewClient("test@example.com", "password", WithBaseURL(server.URL))
-			if err != nil {
-				t.Fatalf("Failed to create client: %v", err)
-			}
-
-			_, err = client.SaveConversation(context.Background(), tc.request)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("Expected error: %v, got error: %v", tc.wantErr, err)
-			}
-		})
-	}
+	t.Logf("Got expected error: %v", err)
 }

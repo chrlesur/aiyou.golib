@@ -16,7 +16,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 // Package aiyou provides authentication functionalities for the AI.YOU API.
-
 package aiyou
 
 import (
@@ -30,7 +29,8 @@ import (
 	"time"
 )
 
-// JWTAuthenticator implements the Authenticator interface for JWT-based authentication.
+// JWTAuthenticator implements the Authenticator interface for JWT-based authentication
+// using email and password credentials.
 type JWTAuthenticator struct {
 	email    string
 	password string
@@ -41,7 +41,14 @@ type JWTAuthenticator struct {
 	logger   Logger
 }
 
-// NewJWTAuthenticator creates a new instance of JWTAuthenticator.
+// BearerAuthenticator implements the Authenticator interface for direct bearer token authentication
+// without requiring email/password credentials.
+type BearerAuthenticator struct {
+	token  string
+	logger Logger
+}
+
+// NewJWTAuthenticator creates a new instance of JWTAuthenticator for email/password authentication.
 func NewJWTAuthenticator(email, password, baseURL string, client *http.Client, logger Logger) *JWTAuthenticator {
 	if logger == nil {
 		logger = NewDefaultLogger(io.Discard) // Default silent logger
@@ -55,15 +62,33 @@ func NewJWTAuthenticator(email, password, baseURL string, client *http.Client, l
 	}
 }
 
-// SetLogger sets a custom logger for the authenticator
+// NewBearerAuthenticator creates a new instance of BearerAuthenticator for direct token authentication.
+func NewBearerAuthenticator(token string, logger Logger) *BearerAuthenticator {
+	if logger == nil {
+		logger = NewDefaultLogger(io.Discard) // Default silent logger
+	}
+	logger.Debugf("Initializing Bearer authenticator with token: %s", maskSensitiveInfo(token))
+	return &BearerAuthenticator{
+		token:  token,
+		logger: logger,
+	}
+}
+
+// SetLogger sets a custom logger for the JWT authenticator
 func (a *JWTAuthenticator) SetLogger(logger Logger) {
 	a.logger = logger
 }
 
-// Authenticate performs the authentication process and obtains a JWT token.
+// SetLogger sets a custom logger for the Bearer authenticator
+func (a *BearerAuthenticator) SetLogger(logger Logger) {
+	a.logger = logger
+}
+
+// Authenticate performs the authentication process and obtains a JWT token
+// for email/password authentication.
 func (a *JWTAuthenticator) Authenticate(ctx context.Context) error {
 	if !a.tokenExpired() {
-		a.logger.Debugf("Token is still valid, skipping authentication")
+		a.logger.Debugf("JWT token is still valid, skipping authentication")
 		return nil
 	}
 
@@ -113,12 +138,35 @@ func (a *JWTAuthenticator) Authenticate(ctx context.Context) error {
 	return nil
 }
 
-// Token returns the current JWT token.
+// Authenticate for BearerAuthenticator validates the token existence
+// and returns immediately as no API call is needed.
+func (a *BearerAuthenticator) Authenticate(ctx context.Context) error {
+	if a.token == "" {
+		a.logger.Errorf("Bearer token authentication failed: token is empty")
+		return &AuthenticationError{Message: "bearer token is empty"}
+	}
+	a.logger.Debugf("Using provided bearer token for authentication")
+	return nil
+}
+
+// Token returns the current JWT token
 func (a *JWTAuthenticator) Token() string {
 	return a.token
 }
 
-// tokenExpired checks if the current token has expired.
+// Token returns the bearer token
+func (a *BearerAuthenticator) Token() string {
+	return a.token
+}
+
+// SetToken updates the bearer token
+func (a *BearerAuthenticator) SetToken(token string) {
+	a.logger.Infof("Updating bearer token")
+	a.token = token
+	a.logger.Debugf("Bearer token has been successfully updated: %s", maskSensitiveInfo(token))
+}
+
+// tokenExpired checks if the current JWT token has expired
 func (a *JWTAuthenticator) tokenExpired() bool {
 	return a.token == "" || time.Now().After(a.expiry)
 }

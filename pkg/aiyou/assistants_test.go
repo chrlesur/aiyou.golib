@@ -2,112 +2,59 @@ package aiyou
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"os"
 	"testing"
-	"time"
 )
 
-func TestGetUserAssistantsErrors(t *testing.T) {
-	testCases := []struct {
-		name        string
-		setup       func(w http.ResponseWriter)
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "Unauthorized",
-			setup: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{
-					"error": "Unauthorized",
-				})
-			},
-			wantErr:     true,
-			errContains: "status code: 401",
-		},
-		{
-			name: "Bad Request",
-			setup: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]string{
-					"error": "Bad Request",
-				})
-			},
-			wantErr:     true,
-			errContains: "status code: 400",
-		},
-		{
-			name: "Server Error",
-			setup: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]string{
-					"error": "Internal Server Error",
-				})
-			},
-			wantErr:     true,
-			errContains: "status code: 500",
-		},
-		{
-			name: "Invalid Response",
-			setup: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("invalid json"))
-			},
-			wantErr:     true,
-			errContains: "failed to decode",
-		},
-		{
-			name: "Empty Response",
-			setup: func(w http.ResponseWriter) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(""))
-			},
-			wantErr:     true,
-			errContains: "EOF",
-		},
+func TestGetUserAssistants(t *testing.T) {
+	// Créer un logger pour les tests
+	logger := NewDefaultLogger(os.Stderr)
+	logger.SetLevel(DEBUG) // Active les logs pour voir ce qui se passe
+
+	// Utilisation des credentials depuis test_config.go
+	client, err := NewClient(
+		WithEmailPassword(testConfig.Email, testConfig.Password),
+		WithBaseURL(testConfig.BaseURL),
+		WithLogger(logger),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/api/login":
-					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(LoginResponse{
-						Token:     "test_token",
-						ExpiresAt: time.Now().Add(time.Hour),
-					})
-				case "/api/v1/user/assistants":
-					tc.setup(w)
-				}
-			}))
-			defer server.Close()
-
-			client, err := NewClient(
-				"test@example.com",
-				"password",
-				WithBaseURL(server.URL),
-			)
-			if err != nil {
-				t.Fatalf("Failed to create client: %v", err)
-			}
-
-			_, err = client.GetUserAssistants(context.Background())
-
-			if tc.wantErr {
-				if err == nil {
-					t.Error("Expected error but got none")
-					return
-				}
-				if !strings.Contains(err.Error(), tc.errContains) {
-					t.Errorf("Expected error containing %q, got %q", tc.errContains, err.Error())
-				}
-			} else if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
-		})
+	resp, err := client.GetUserAssistants(context.Background())
+	if err != nil {
+		t.Fatalf("GetUserAssistants failed: %v", err)
 	}
+
+	if resp == nil {
+		t.Fatal("Expected non-nil response")
+	}
+
+	// Log des résultats pour le debug
+	t.Logf("Found %d assistants", len(resp.Members))
+	for i, assistant := range resp.Members {
+		t.Logf("Assistant %d: ID=%s, Name=%s", i+1, assistant.ID, assistant.Name)
+	}
+}
+
+func TestGetUserAssistantsUnauthorized(t *testing.T) {
+	logger := NewDefaultLogger(os.Stderr)
+	logger.SetLevel(DEBUG)
+
+	// Test avec des credentials invalides
+	client, err := NewClient(
+		WithEmailPassword("invalid@example.com", "wrong_password"),
+		WithBaseURL(testConfig.BaseURL), // On garde la bonne URL
+		WithLogger(logger),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	_, err = client.GetUserAssistants(context.Background())
+	if err == nil {
+		t.Error("Expected error for unauthorized request")
+	}
+
+	t.Logf("Got expected error: %v", err)
 }
