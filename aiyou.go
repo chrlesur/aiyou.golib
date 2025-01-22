@@ -91,8 +91,8 @@ var SupportedFormats = internal.SupportedFormats // Formats audio supportés
 // Supporte deux méthodes d'authentification :
 // 1. Email/Mot de passe : NewClient("email@example.com", "password")
 // 2. Bearer Token : NewClient("", "", WithBearerToken("your-token"))
-func NewClient(email, password string, options ...ClientOption) (*Client, error) {
-	return internal.NewClient(email, password, options...)
+func NewClient(options ...ClientOption) (*Client, error) {
+	return internal.NewClient(options...)
 }
 
 // NewDefaultLogger crée un nouveau logger avec la configuration par défaut

@@ -200,14 +200,14 @@ func createClient() (*aiyou.Client, error) {
 	if debug {
 		logger.SetLevel(aiyou.DEBUG)
 	} else if quietMode {
-		logger.SetLevel(aiyou.ERROR) // En mode quiet, on n'affiche que les erreurs
+		logger.SetLevel(aiyou.ERROR)
 	} else {
 		logger.SetLevel(aiyou.INFO)
 	}
 
+	// Utilisation de la nouvelle méthode de création du client avec options
 	return aiyou.NewClient(
-		clientEmail,
-		clientPassword,
+		aiyou.WithEmailPassword(clientEmail, clientPassword),
 		aiyou.WithLogger(logger),
 		aiyou.WithBaseURL(clientBaseURL),
 	)
@@ -360,11 +360,22 @@ func startChat(cmd *cobra.Command, args []string) {
 
 		ctx := context.Background()
 		req := aiyou.ChatCompletionRequest{
-			Messages:    conversation,
+			Messages: []aiyou.Message{
+				{
+					Role: "user",
+					Content: []aiyou.ContentPart{
+						{
+							Type: "text",
+							Text: line,
+						},
+					},
+				},
+			},
 			AssistantID: currentAssistantID,
 			Stream:      true,
+			Temperature: 0.7, // Changé pour utiliser une valeur flottante entre 0 et 1
+			TopP:        0.95,
 		}
-
 		stream, err := client.ChatCompletionStream(ctx, req)
 		if err != nil {
 			close(spinnerDone)

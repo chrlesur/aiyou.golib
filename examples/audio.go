@@ -72,9 +72,9 @@ func createClient() (*aiyou.Client, error) {
 		logger.SetLevel(aiyou.INFO)
 	}
 
+	// Utilisation de WithEmailPassword au lieu des paramètres directs
 	return aiyou.NewClient(
-		email,
-		password,
+		aiyou.WithEmailPassword(email, password),
 		aiyou.WithLogger(logger),
 		aiyou.WithBaseURL(baseURL),
 	)

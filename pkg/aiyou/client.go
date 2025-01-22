@@ -219,3 +219,42 @@ func (c *Client) AuthenticatedRequest(ctx context.Context, method, path string, 
 
 	return resp, nil
 }
+
+// SetBaseURL sets the base URL for API requests
+func (c *Client) SetBaseURL(url string) {
+	c.baseURL = url
+}
+
+// SetLogger sets the logger for the client
+func (c *Client) SetLogger(logger Logger) {
+	c.logger = logger
+	if c.auth != nil {
+		switch auth := c.auth.(type) {
+		case *JWTAuthenticator:
+			auth.SetLogger(logger)
+		case *BearerAuthenticator:
+			auth.SetLogger(logger)
+		}
+	}
+	c.safeLog = SafeLog(logger)
+}
+
+// CreateChatCompletion is a helper method that wraps ChatCompletion
+func (c *Client) CreateChatCompletion(ctx context.Context, messages []Message, assistantID string) (*ChatCompletionResponse, error) {
+	req := ChatCompletionRequest{
+		Messages:    messages,
+		AssistantID: assistantID,
+		Stream:      false,
+	}
+	return c.ChatCompletion(ctx, req)
+}
+
+// CreateChatCompletionStream is a helper method that wraps ChatCompletionStream
+func (c *Client) CreateChatCompletionStream(ctx context.Context, messages []Message, assistantID string) (*StreamReader, error) {
+	req := ChatCompletionRequest{
+		Messages:    messages,
+		AssistantID: assistantID,
+		Stream:      true,
+	}
+	return c.ChatCompletionStream(ctx, req)
+}

@@ -67,8 +67,7 @@ func main() {
 
 	// Création du client
 	client, err := aiyou.NewClient(
-		*email,
-		*password,
+		aiyou.WithEmailPassword(*email, *password),
 		aiyou.WithLogger(logger),
 		aiyou.WithBaseURL(*baseURL),
 	)
@@ -92,29 +91,34 @@ func main() {
 		},
 	}
 
-	// Création du JSON de conversation
 	messagesJSON, err := json.Marshal(messages)
 	if err != nil {
 		log.Fatalf("Erreur lors de la sérialisation des messages: %v", err)
 	}
 
-	// Création de la requête de sauvegarde
 	conversation := aiyou.SaveConversationRequest{
 		AssistantID:    *assistantID,
-		Conversation:   "Test de conversation",
+		Conversation:   messages[0].Content[0].Text,
 		FirstMessage:   messages[0].Content[0].Text,
 		ContentJson:    string(messagesJSON),
 		ModelName:      "gpt-4",
 		IsNewAppThread: true,
 	}
 
-	// Context avec timeout
+	if *debug {
+		fmt.Printf("\nRequête de sauvegarde:\n")
+		fmt.Printf("AssistantID: %s\n", conversation.AssistantID)
+		fmt.Printf("Conversation: %s\n", conversation.Conversation)
+		fmt.Printf("FirstMessage: %s\n", conversation.FirstMessage)
+		fmt.Printf("ContentJson: %s\n", conversation.ContentJson)
+		fmt.Printf("ModelName: %s\n", conversation.ModelName)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	defer cancel()
 
-	// Sauvegarde de la conversation
 	fmt.Println("Sauvegarde de la conversation...")
-	_, err = client.SaveConversation(ctx, conversation)
+	saveResp, err := client.SaveConversation(ctx, conversation)
 	if err != nil {
 		switch e := err.(type) {
 		case *aiyou.AuthenticationError:
@@ -128,13 +132,14 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\nConversation sauvegardée, recherche du thread...\n")
+	if *debug {
+		fmt.Printf("ID de conversation sauvegardée: %s\n", saveResp.ID)
+	}
 
-	// Attente pour la propagation
+	fmt.Printf("\nConversation sauvegardée, recherche du thread...\n")
 	fmt.Printf("Attente de %s pour la propagation...\n", retryDelay)
 	time.Sleep(retryDelay)
 
-	// Récupération de la liste des threads
 	threadsOutput, err := client.GetUserThreads(ctx, &aiyou.UserThreadsParams{
 		Page:         1,
 		ItemsPerPage: 10,
@@ -143,11 +148,22 @@ func main() {
 		log.Fatalf("Erreur lors de la récupération des threads: %v", err)
 	}
 
-	// Recherche du thread le plus récent correspondant
+	if *debug {
+		fmt.Printf("\nThreads trouvés (%d):\n", len(threadsOutput.Threads))
+		for _, t := range threadsOutput.Threads {
+			fmt.Printf("\n- Thread ID: %s\n", t.ID)
+			fmt.Printf("  Content: %q\n", t.Content)
+			fmt.Printf("  Assistant: %s\n", t.AssistantIdOpenAi)
+			fmt.Printf("  First Message: %q\n", t.FirstMessage)
+			if t.AssistantContentJson != "" {
+				fmt.Printf("  Content JSON: %s\n", t.AssistantContentJson)
+			}
+		}
+	}
+
 	var thread *aiyou.ConversationThread
 	for _, t := range threadsOutput.Threads {
-		if t.Content == conversation.Conversation &&
-			t.AssistantIdOpenAi == conversation.AssistantID &&
+		if t.AssistantIdOpenAi == conversation.AssistantID &&
 			t.FirstMessage == conversation.FirstMessage {
 			thread = &t
 			break
@@ -158,7 +174,36 @@ func main() {
 		log.Fatalf("Thread nouvellement créé non trouvé")
 	}
 
-	// Affichage des détails de la conversation
+	fmt.Printf("\nConversation récupérée :\n")
+	fmt.Printf("Thread ID: %s\n", thread.ID)
+	fmt.Printf("Thread Param ID: %d\n", thread.ThreadIdParam)
+	fmt.Printf("Contenu: %s\n", thread.Content)
+	fmt.Printf("Assistant Name: %s\n", thread.AssistantName)
+	if thread.AssistantModel != nil {
+		fmt.Printf("Assistant Model: %s\n", *thread.AssistantModel)
+	}
+	fmt.Printf("Assistant ID: %d\n", thread.AssistantId)
+	fmt.Printf("Assistant OpenAI ID: %s\n", thread.AssistantIdOpenAi)
+	fmt.Printf("Created at: %s\n", thread.CreatedAt.Format(time.RFC3339))
+	fmt.Printf("Updated at: %s\n", thread.UpdatedAt.Format(time.RFC3339))
+	fmt.Printf("Is New App Thread: %v\n", thread.IsNewAppThread)
+
+	// Affichage des messages
+	if thread.AssistantContentJson != "" {
+		var messages []aiyou.Message
+		if err := json.Unmarshal([]byte(thread.AssistantContentJson), &messages); err != nil {
+			fmt.Printf("\nErreur lors du décodage des messages: %v\n", err)
+		} else {
+			fmt.Printf("\nMessages (%d):\n", len(messages))
+			for i, msg := range messages {
+				fmt.Printf("\nMessage %d:\n", i+1)
+				printMessage(msg, " ")
+			}
+		}
+	} else {
+		fmt.Println("\nAucun message dans la conversation")
+	}
+
 	fmt.Printf("\nConversation récupérée :\n")
 	fmt.Printf("Thread ID: %s\n", thread.ID)
 	fmt.Printf("Thread Param ID: %d\n", thread.ThreadIdParam)
