@@ -105,8 +105,7 @@ func TestRateLimiter_Integration(t *testing.T) {
 	defer server.Close()
 
 	client, err := NewClient(
-		"test@example.com",
-		"password",
+		WithEmailPassword("test@example.com", "password"),
 		WithBaseURL(server.URL),
 		WithRateLimiter(RateLimiterConfig{
 			RequestsPerSecond: 2,

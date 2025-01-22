@@ -4,6 +4,7 @@ package aiyou
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -144,7 +145,11 @@ func TestTranscribeAudioFile(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("test@example.com", "password", WithBaseURL(server.URL))
+	client, err := NewClient(
+		WithEmailPassword("test@example.com", "password"),
+		WithBaseURL(server.URL),
+		WithLogger(NewDefaultLogger(io.Discard)),
+	)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

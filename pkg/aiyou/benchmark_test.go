@@ -48,8 +48,7 @@ func BenchmarkChatCompletion(b *testing.B) {
 
 	// Créer le client avec un logger silencieux
 	client, err := NewClient(
-		"test@example.com",
-		"password",
+		WithEmailPassword("test@example.com", "password"),
 		WithBaseURL(server.URL),
 		WithLogger(NewDefaultLogger(io.Discard)),
 	)

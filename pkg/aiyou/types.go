@@ -37,7 +37,7 @@ type LoginResponse struct {
 type ChatCompletionRequest struct {
 	Messages     []Message `json:"messages"`               // Liste des messages de la conversation
 	AssistantID  string    `json:"assistantId"`            // ID de l'assistant à utiliser
-	Temperature  int       `json:"temperature"`            // Contrôle de la créativité (1-10)
+	Temperature  float64   `json:"temperature"`            // Contrôle de la créativité (1-10)
 	TopP         float64   `json:"top_p"`                  // Contrôle de la diversité des réponses
 	Stream       bool      `json:"stream"`                 // Activer le mode streaming
 	PromptSystem string    `json:"promptSystem,omitempty"` // Message système personnalisé
@@ -176,7 +176,7 @@ type AudioTranscriptionRequest struct {
 // AudioTranscriptionResponse represents an audio transcription response.
 type AudioTranscriptionResponse struct {
 	Transcription string `json:"transcription"` // Texte transcrit
-   }
+}
 
 // SupportedAudioFormat represents a supported audio format.
 type SupportedAudioFormat struct {

@@ -88,8 +88,7 @@ func createClient() (*aiyou.Client, error) {
 	}
 
 	return aiyou.NewClient(
-		email,
-		password,
+		aiyou.WithEmailPassword(*email, *password),
 		aiyou.WithLogger(logger),
 		aiyou.WithBaseURL(baseURL),
 		aiyou.WithRateLimiter(aiyou.RateLimiterConfig{

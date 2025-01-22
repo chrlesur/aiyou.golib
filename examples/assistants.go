@@ -63,8 +63,7 @@ func main() {
 
 	// Création du client avec gestion des erreurs détaillée
 	client, err := aiyou.NewClient(
-		*email,
-		*password,
+		aiyou.WithEmailPassword(*email, *password),
 		aiyou.WithLogger(logger),
 		aiyou.WithBaseURL(*baseURL),
 	)

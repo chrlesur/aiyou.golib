@@ -18,3 +18,6 @@ code.json
 
 # Fichiers de log
 *.log
+
+#credential de configuration de test
+test_config.go
