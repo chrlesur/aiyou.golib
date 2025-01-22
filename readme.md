@@ -74,54 +74,39 @@ L'organisation des fichiers et répertoires du package :
 - `errors.go` : Types d'erreurs personnalisés
 
 #### Exemples
-Les exemples dans le dossier `examples/` démontrent des cas d'utilisation concrets et servent de documentation interactive. Chaque exemple peut être exécuté indépendamment et inclut des options de configuration complètes.
-
-### Tests
-
-Chaque composant majeur dispose de ses propres tests unitaires (fichiers `*_test.go`). Les tests couvrent :
-
-- Les cas d'utilisation normaux
-- La gestion des erreurs
-- Les cas limites
-- Les performances (benchmarks)
-
-## Utilisation
+Les exemples dans le dossier `examples/` démontrent des cas d'utilisation concrets et servent de documentation interactive.
 
 ### Initialisation du client avec options
 
     import "github.com/chrlesur/aiyou.golib"
 
     // Client simple
-    client, err := aiyou.NewClient("votre-email@exemple.com", "votre-mot-de-passe")
+    client, err := aiyou.NewClient(
+        aiyou.WithEmailPassword("votre-email@exemple.com", "votre-mot-de-passe"),
+    )
     if err != nil {
-    log.Fatalf("Erreur lors de la création du client : %v", err)
+        log.Fatalf("Erreur lors de la création du client : %v", err)
     }
 
-    // Client avec options
+    // Client avec options avancées
     client, err := aiyou.NewClient(
-    "votre-email@exemple.com",
-    "votre-mot-de-passe",
-    aiyou.WithBaseURL("https://ai.dragonflygroup.fr"),
+        aiyou.WithEmailPassword("votre-email@exemple.com", "votre-mot-de-passe"),
+        aiyou.WithBaseURL("https://ai.dragonflygroup.fr"),
     aiyou.WithLogger(customLogger),
     aiyou.WithRateLimiter(aiyou.RateLimiterConfig{
-    RequestsPerSecond: 2.0,
-    BurstSize: 3,
-    WaitTimeout: 5 * time.Second,
+            RequestsPerSecond: 2.0,
+            BurstSize: 3,
+            WaitTimeout: 5 * time.Second,
     }),
     )
 
 ### Authentification
 
-L'authentification est gérée automatiquement par le client. Vous n'avez pas besoin de vous authentifier manuellement avant chaque requête.
-
 ### Mode Quiet
 
-Un mode silencieux est disponible pour réduire les logs et les sorties :
-
     client, err := aiyou.NewClient(
-    "email@exemple.com",
-    "password",
-    aiyou.WithQuietMode(true),
+        aiyou.WithEmailPassword("email@exemple.com", "password"),
+        aiyou.WithLogger(quietLogger),
     )
 
 ### Chat Completion
@@ -131,53 +116,52 @@ aiyou.golib fournit deux méthodes principales pour le chat completion :
 #### Chat Completion Standard
 
     req := aiyou.ChatCompletionRequest{
-    Messages: []aiyou.Message{
-    {
-    Role: "user",
-    Content: []aiyou.ContentPart{
-    {Type: "text", Text: "Quelle est la capitale de la France ?"},
-    },
-    },
-    },
-    AssistantID: "id-de-votre-assistant",
+        Messages: []aiyou.Message{
+            {
+                Role: "user",
+                Content: []aiyou.ContentPart{
+                    {Type: "text", Text: "Quelle est la capitale de la France ?"},
+                },
+            },
+        },
+        AssistantID: "id-de-votre-assistant",
     }
-
     resp, err := client.ChatCompletion(context.Background(), req)
     if err != nil {
-    log.Fatalf("Erreur lors du chat completion : %v", err)
+        log.Fatalf("Erreur lors du chat completion : %v", err)
     }
 
     fmt.Printf("Réponse de l'IA : %s\n", resp.Choices[0].Message.Content[0].Text)
 
-#### Chat Completion en Streaming
+### Chat Completion en Streaming
 
     streamReq := aiyou.ChatCompletionRequest{
-    Messages: []aiyou.Message{
-    {
-    Role: "user",
-    Content: []aiyou.ContentPart{
-    {Type: "text", Text: "Raconte-moi une courte histoire."},
-    },
-    },
-    },
-    AssistantID: "id-de-votre-assistant",
-    Stream: true,
+        Messages: []aiyou.Message{
+            {
+                Role: "user",
+                Content: []aiyou.ContentPart{
+                    {Type: "text", Text: "Raconte-moi une courte histoire."},
+                },
+            },
+        },
+        AssistantID: "id-de-votre-assistant",
+        Stream: true,
     }
 
     stream, err := client.ChatCompletionStream(context.Background(), streamReq)
     if err != nil {
-    log.Fatalf("Erreur lors du chat completion en streaming : %v", err)
+        log.Fatalf("Erreur lors du chat completion en streaming : %v", err)
     }
 
     for {
-    chunk, err := stream.ReadChunk()
-    if err == io.EOF {
-    break
+        chunk, err := stream.ReadChunk()
+        if err == io.EOF {
+            break
     }
-    if err != nil {
-    log.Fatalf("Erreur lors de la lecture du chunk : %v", err)
-    }
-    fmt.Print(chunk.Choices[0].Delta.Content)
+        if err != nil {
+            log.Fatalf("Erreur lors de la lecture du chunk : %v", err)
+        }
+        fmt.Print(chunk.Choices[0].Delta.Content)
     }
 
 ### Transcription Audio
@@ -186,13 +170,13 @@ Le package supporte la transcription de fichiers audio :
 
     // Transcription simple
     opts := &aiyou.AudioTranscriptionRequest{
-    Language: "fr",
-    Format: "text",
+        Language: "fr",
+        Format: "text",
     }
 
     transcription, err := client.TranscribeAudioFile(context.Background(), "chemin/vers/audio.wav", opts)
     if err != nil {
-    log.Fatalf("Erreur de transcription: %v", err)
+        log.Fatalf("Erreur de transcription: %v", err)
     }
     fmt.Println(transcription.Transcription)
 
@@ -218,9 +202,8 @@ Le package aiyou.golib implémente une gestion avancée des erreurs et un systè
 #### Système de retry
 
     client, err := aiyou.NewClient(
-    "your-email@example.com",
-    "your-password",
-    aiyou.WithRetry(3, time.Second),
+        aiyou.WithEmailPassword("your-email@example.com", "your-password"),
+        aiyou.WithRetry(3, time.Second),
     )
 
 ### Logging
@@ -231,9 +214,8 @@ Le package inclut un système de logging flexible qui protège les informations 
 
     customLogger := aiyou.NewDefaultLogger(os.Stdout)
     client, err := aiyou.NewClient(
-    "your-email@example.com",
-    "your-password",
-    aiyou.WithLogger(customLogger),
+        aiyou.WithEmailPassword("your-email@example.com", "your-password"),
+        aiyou.WithLogger(customLogger),
     )
 
 #### Niveaux de Log
@@ -244,7 +226,7 @@ Le système de logging supporte quatre niveaux :
 - `WARN` : Messages d'avertissement
 - `ERROR` : Messages d'erreur
 
-    customLogger.SetLevel(aiyou.DEBUG)  
+    customLogger.SetLevel(aiyou.DEBUG)
 
 ### Rate Limiting
 
@@ -253,48 +235,109 @@ aiyou.golib inclut un système de rate limiting configurable pour contrôler le 
 #### Configuration du Rate Limiting
 
     client, err := aiyou.NewClient(
-    "your-email@example.com",
-    "your-password",
-    aiyou.WithRateLimiter(aiyou.RateLimiterConfig{
-    RequestsPerSecond: 10, // Limite de requêtes par seconde
-    BurstSize: 5, // Nombre de requêtes autorisées en burst
-    WaitTimeout: 5 * time.Second, // Timeout d'attente maximum
-    }),
+        aiyou.WithEmailPassword("your-email@example.com", "your-password"),
+        aiyou.WithRateLimiter(aiyou.RateLimiterConfig{
+            RequestsPerSecond: 10,
+            BurstSize: 5,
+            WaitTimeout: 5 * time.Second,
+        }),
     )
 
 #### Gestion des Erreurs de Rate Limiting
 
     resp, err := client.ChatCompletion(ctx, req)
     if err != nil {
-    switch e := err.(type) {
-    case *aiyou.RateLimitError:
-    if e.IsClientSide {
-    fmt.Printf("Rate limit local dépassé. Réessayer dans %d secondes\n", e.RetryAfter)
-    } else {
-    fmt.Printf("Quota API dépassé. Réessayer dans %d secondes\n", e.RetryAfter)
-    }
-    }
-    return
+        switch e := err.(type) {
+            case *aiyou.RateLimitError:
+                if e.IsClientSide {
+                    fmt.Printf("Rate limit local dépassé. Réessayer dans %d secondes\n", e.RetryAfter)
+                } else {
+                    fmt.Printf("Quota API dépassé. Réessayer dans %d secondes\n", e.RetryAfter)
+                }
+        }
+        return
     }
 
 #### Utilisation avec des Requêtes Concurrentes
 
     var wg sync.WaitGroup
     for i := 0; i < 10; i++ {
-    wg.Add(1)
-    go func(i int) {
-    defer wg.Done()
-    
-    ctx := context.Background()
-    msg := aiyou.NewTextMessage("user", fmt.Sprintf("Request %d", i))
-    
-    resp, err := client.CreateChatCompletion(ctx, []aiyou.Message{msg}, "assistant-id")
+        wg.Add(1)
+        go func(i int) {
+            defer wg.Done()
+
+            ctx := context.Background()
+            msg := aiyou.NewTextMessage("user", fmt.Sprintf("Request %d", i))
+
+            resp, err := client.CreateChatCompletion(ctx, []aiyou.Message{msg}, "assistant-id")
+            if err != nil {
+                log.Printf("Request %d failed: %v", i, err)
+                return
+            }
+            log.Printf("Request %d successful", i)
+        }(i)
+    }
+    wg.Wait()
+
+## Exemples
+
+Des exemples complets sont disponibles dans le dossier `examples/` :
+
+# Chat interactif avec historique et commandes
+    go run examples/simple_client.go --email="user@example.com" --password="pass" --assistant="asst_123"
+
+# Gestion des assistants
+    go run examples/assistants.go --email="user@example.com" --password="pass"
+
+# Test de rate limiting simple
+    go run examples/rate_limiting.go --email="user@example.com" --password="pass" --rate=2.0
+
+# Test de rate limiting avancé
+    go run examples/rate_limiting_advanced.go --email="user@example.com" --password="pass" --requests=20 --rate=1.0 --burst=2
+
+# Transcription audio
+    go run examples/audio.go --email="user@example.com" --password="pass" --file="audio.wav" --lang="fr"
+
+### Options communes des exemples
+
+Tous les exemples supportent les options suivantes :
+- `--email` : Email pour l'authentification
+- `--password` : Mot de passe
+- `--url` : URL de base de l'API (optionnel)
+- `--debug` : Active les logs de debug
+- `--quiet` : Mode silencieux
+
+## Contribution
+
+Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou à soumettre une pull request.
+
+## Licence
+
+Ce projet est sous licence GNU General Public License v3.0 (GPL-3.0). Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+            {
+                Role: "user",
+                Content: []aiyou.ContentPart{
+                    {Type: "text", Text: "Raconte-moi une courte histoire."},
+                },
+            },
+        },
+        AssistantID: "id-de-votre-assistant",
+        Stream: true,
+    }
+
+    stream, err := client.ChatCompletionStream(context.Background(), streamReq)
     if err != nil {
     log.Printf("Request %d failed: %v", i, err)
     return
+        log.Fatalf("Erreur lors du chat completion en streaming : %v", err)
     }
     log.Printf("Request %d successful", i)
     }(i)
+
+    for {
+        chunk, err := stream.ReadChunk()
+        if err == io.EOF {
+            break
     }
     wg.Wait()
 
