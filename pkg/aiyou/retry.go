@@ -34,7 +34,7 @@ func retryOperation(ctx context.Context, logger Logger, maxRetries int, initialD
         
         err = operation()
         if err == nil {
-            logger.Infof("Operation successful on attempt %d", attempt+1)
+            logger.Debugf("Operation successful on attempt %d", attempt+1)
             return nil
         }
 
