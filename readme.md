@@ -313,6 +313,55 @@ Tous les exemples supportent les options suivantes :
 -   `--debug` : Active les logs de debug
 -   `--quiet` : Mode silencieux
 
+## Changelog
+
+### v1.2.3 (2024-02-09)
+
+#### 🐛 Corrections de bugs
+
+- **Streaming**: Amélioration de la gestion des messages en streaming dans chat.go
+  - Correction du traitement des messages SSE (Server-Sent Events)
+  - Meilleure gestion du préfixe "data: " dans les chunks
+  - Ajout d'une validation plus robuste des messages
+  - Gestion améliorée des messages vides et invalides
+  - Logging plus détaillé pour le débogage
+
+```go
+// Exemple de la nouvelle implémentation de ReadChunk
+func (sr *StreamReader) ReadChunk() (*ChatCompletionResponse, error) {
+    line, err := sr.reader.ReadBytes('\n')
+    if err != nil {
+        if err == io.EOF {
+            return nil, err
+        }
+        sr.logger.Errorf("Error reading stream: %v", err)
+        return nil, err
+    }
+
+    // Nettoyage et validation des chunks
+    line = bytes.TrimSpace(line)
+    if len(line) == 0 {
+        return sr.ReadChunk()
+    }
+
+    // Gestion améliorée des messages SSE
+    if bytes.HasPrefix(line, []byte("data: ")) {
+        line = bytes.TrimPrefix(line, []byte("data: "))
+    } else {
+        sr.logger.Debugf("Skipping non-data line: %s", string(line))
+        return sr.ReadChunk()
+    }
+
+    // ... reste de l'implémentation
+}
+```
+
+#### 🌟 Améliorations
+
+- Ajout de logs plus détaillés pour le débogage des problèmes de streaming
+- Meilleure gestion des erreurs avec récupération automatique
+- Support amélioré des messages de keep-alive
+
 ## Contribution
 
 Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou à soumettre une pull request.

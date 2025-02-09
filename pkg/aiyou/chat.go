@@ -185,6 +185,7 @@ func (c *Client) ChatCompletionStream(ctx context.Context, req ChatCompletionReq
 }
 
 // ReadChunk reads and processes a single chunk from the stream
+// Dans pkg/aiyou/chat.go
 func (sr *StreamReader) ReadChunk() (*ChatCompletionResponse, error) {
 	line, err := sr.reader.ReadBytes('\n')
 	if err != nil {
@@ -198,7 +199,7 @@ func (sr *StreamReader) ReadChunk() (*ChatCompletionResponse, error) {
 	// Nettoyer la ligne
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 {
-		return nil, nil
+		return sr.ReadChunk() // Continuer à lire si la ligne est vide
 	}
 
 	// Vérifier si c'est la fin du stream
@@ -206,15 +207,26 @@ func (sr *StreamReader) ReadChunk() (*ChatCompletionResponse, error) {
 		return nil, io.EOF
 	}
 
-	// Enlever le préfixe "" si présent
-	if bytes.HasPrefix(line, []byte("")) {
+	// Vérifier et traiter le préfixe "data: "
+	if bytes.HasPrefix(line, []byte("data: ")) {
 		line = bytes.TrimPrefix(line, []byte("data: "))
+	} else {
+		sr.logger.Debugf("Skipping non-data line: %s", string(line))
+		return sr.ReadChunk() // Ignorer les lignes sans préfixe "data: "
+	}
+
+	// Vérifier si la ligne est vide après le trim
+	if len(bytes.TrimSpace(line)) == 0 {
+		return sr.ReadChunk()
 	}
 
 	var chunk ChatCompletionResponse
 	if err := json.Unmarshal(line, &chunk); err != nil {
-		sr.logger.Errorf("Failed to unmarshal chunk: %v, raw %s", err, string(line))
-		return nil, fmt.Errorf("failed to unmarshal chunk: %w", err)
+		sr.logger.Errorf("Failed to unmarshal chunk: %v, raw data: %s", err, string(line))
+		// Option 1 : continuer à lire
+		return sr.ReadChunk()
+		// Option 2 : retourner l'erreur
+		// return nil, fmt.Errorf("failed to unmarshal chunk: %w, raw data: %s", err, string(line))
 	}
 
 	return &chunk, nil
